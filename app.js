@@ -24,6 +24,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const startButton   = document.getElementById('startCamera');
   const stopButton    = document.getElementById('stopCamera');
 
+  const resultCard    = document.getElementById('scanResult');
+  const resultGrid    = document.getElementById('resultGrid');
+  const resultHint    = document.getElementById('resultHint');
+  const clearResult   = document.getElementById('clearResult');
+  const cameraStatus  = document.getElementById('cameraStatus');
+
   const codeReader = new ZXing.BrowserQRCodeReader();
 
   // ========= State =========
@@ -39,21 +45,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let starting = false;
   let decoding = false;
 
-  // ✅ session lock กัน permission เด้งซ้ำ
-  let cameraSessionLocked = false;
-  let hardDenied = false;
-
   // ✅ Idle timer
   let idleTimer = null;
-
   function bumpIdle_() {
     if (!cameraStarted) return;
     if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      stopCamera(true);
-    }, CAMERA_IDLE_TIMEOUT_MS);
+    idleTimer = setTimeout(() => stopCamera(true), CAMERA_IDLE_TIMEOUT_MS);
   }
-
   function clearIdle_() {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = null;
@@ -61,20 +59,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ========= UX =========
   window.onclick = (e) => { if (e.target.id !== 'cameraSelect') searchInput.focus(); };
+  searchInput.addEventListener('input', () => { searchInput.value = searchInput.value.toUpperCase(); bumpIdle_(); });
+  searchBtn.addEventListener('click', () => { bumpIdle_(); runSearch(searchInput.value); });
+  searchInput.addEventListener('keyup', (e) => { bumpIdle_(); if (e.key === 'Enter') runSearch(searchInput.value); });
 
-  searchInput.addEventListener('input', () => {
-    searchInput.value = searchInput.value.toUpperCase();
-    bumpIdle_();
-  });
-
-  searchBtn.addEventListener('click', () => {
-    bumpIdle_();
-    runSearch(searchInput.value);
-  });
-
-  searchInput.addEventListener('keyup', (e) => {
-    bumpIdle_();
-    if (e.key === 'Enter') runSearch(searchInput.value);
+  clearResult.addEventListener('click', () => {
+    hideResult_();
+    resultHint.textContent = 'พร้อมสแกน...';
   });
 
   startButton.addEventListener('click', async () => {
@@ -148,19 +139,17 @@ document.addEventListener('DOMContentLoaded', () => {
     cameraSelect.style.display = (cams.length <= 1) ? "none" : "block";
   }
 
+  function setCamStatus_(text) {
+    if (cameraStatus) cameraStatus.textContent = text;
+  }
+
   // ======== Camera flow ========
 
   async function startFlow_() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      return Swal.fire({
-        icon:'error',
-        title:'ไม่รองรับกล้อง',
-        text:'เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง',
-        confirmButtonText:'OK'
-      });
+      return Swal.fire({ icon:'error', title:'ไม่รองรับกล้อง', text:'เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง', confirmButtonText:'OK' });
     }
 
-    // ลดปัญหา permission ใน in-app browser
     if (isInAppBrowser_()) {
       await Swal.fire({
         icon: 'info',
@@ -173,23 +162,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    if (hardDenied) {
-      return Swal.fire({
-        icon:'warning',
-        title:'สิทธิ์กล้องถูกปฏิเสธ',
-        html:`<div style="text-align:left;font-size:14px">
-          กรุณาไปเปิดสิทธิ์กล้องในตั้งค่าแล้วกลับมากด “เปิดกล้อง” อีกครั้ง<br><br>
-          • iPhone: Settings → Safari/Chrome → Camera → Allow<br>
-          • Android: Site settings → Camera → Allow
-        </div>`,
-        confirmButtonText:'OK',
-        allowOutsideClick:false
-      });
-    }
-
-    // ✅ ถ้า stream ยัง live + lock อยู่ → ไม่ขอ permission ใหม่
-    if (cameraSessionLocked && activeStream && activeStream.getTracks().some(t => t.readyState === "live")) {
+    // ถ้ากล้องยัง live อยู่ → ไม่ขอ permission ใหม่
+    if (activeStream && activeStream.getTracks().some(t => t.readyState === "live")) {
       cameraStarted = true;
+      setCamStatus_('กล้องทำงานอยู่');
       bumpIdle_();
       resumeDecode_();
       return;
@@ -197,7 +173,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const p = await queryCameraPermission_();
     if (p === "denied") {
-      hardDenied = true;
       return Swal.fire({
         icon: 'warning',
         title: 'ไม่ได้รับอนุญาตใช้กล้อง',
@@ -211,29 +186,25 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    setCamStatus_('กำลังเปิดกล้อง...');
     try {
       await openCameraOnce_();
-      cameraSessionLocked = true; // ✅ lock หลังเปิดสำเร็จ
     } catch (err) {
       console.error(err);
+      setCamStatus_('เปิดกล้องไม่สำเร็จ');
       const name = err?.name || "CameraError";
       let msg = "ไม่สามารถเปิดกล้องได้";
-
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        hardDenied = true;
-        msg = "คุณกดไม่อนุญาตกล้อง หรือระบบบล็อกสิทธิ์กล้อง";
-      }
+      if (name === "NotAllowedError") msg = "คุณกดไม่อนุญาตกล้อง หรือระบบบล็อกสิทธิ์กล้อง";
       if (name === "NotFoundError")  msg = "ไม่พบกล้องในอุปกรณ์นี้";
       if (name === "NotReadableError") msg = "กล้องถูกใช้งานโดยแอปอื่นอยู่ (ปิดแอป/แท็บอื่นก่อน)";
       if (name === "OverconstrainedError") msg = "เลือกกล้อง/ความละเอียดที่อุปกรณ์ไม่รองรับ";
-
       return Swal.fire({ icon:'error', title:'เปิดกล้องไม่สำเร็จ', text: msg, confirmButtonText:'OK' });
     }
 
-    // หลังได้ permission แล้ว refresh list เพื่อ label เต็ม
     try { await refreshCameraSelect_(); } catch (_) {}
 
     cameraStarted = true;
+    setCamStatus_('กล้องทำงานอยู่');
     bumpIdle_();
     resumeDecode_();
   }
@@ -288,13 +259,15 @@ document.addEventListener('DOMContentLoaded', () => {
   async function restartWithDevice_(deviceId) {
     currentDeviceId = deviceId || currentDeviceId || "";
     try {
+      setCamStatus_('กำลังสลับกล้อง...');
       await openCameraOnce_();
-      cameraSessionLocked = true;
       cameraStarted = true;
+      setCamStatus_('กล้องทำงานอยู่');
       bumpIdle_();
       resumeDecode_();
     } catch (err) {
       cameraStarted = false;
+      setCamStatus_('สลับกล้องไม่สำเร็จ');
       Swal.fire({
         icon: 'error',
         title: 'สลับกล้องไม่สำเร็จ',
@@ -321,26 +294,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try { qrVideo.pause(); } catch (_) {}
     qrVideo.srcObject = null;
 
-    // ✅ ปลด lock เมื่อ stop จริง
-    cameraSessionLocked = false;
+    setCamStatus_('กล้องปิดอยู่');
 
     if (fromIdle) {
-      Swal.fire({
-        icon: 'info',
-        title: 'ปิดกล้องอัตโนมัติ',
-        text: 'ไม่มีการใช้งานเกิน 30 วินาที ระบบปิดกล้องให้เพื่อประหยัดแบตเตอรี่',
-        timer: 1800,
-        showConfirmButton: false
-      });
+      // เงียบ ๆ ก็ได้ แต่ใส่ hint เล็กน้อยเหนือกล้องแทน popup
+      showHint_('ปิดกล้องอัตโนมัติ (ไม่มีการใช้งาน 30 วินาที)');
     }
   }
 
   // ======== Decode control ========
-
-  function pauseDecode_() {
-    decoding = false;
-    try { codeReader.reset(); } catch (_) {}
-  }
 
   function resumeDecode_() {
     if (!cameraStarted) return;
@@ -372,19 +334,51 @@ document.addEventListener('DOMContentLoaded', () => {
       lastTextAt = now;
 
       playScanSound();
-
-      // ✅ “สแกนต่อเนื่อง” แต่พัก decode ตอน popup เปิด เพื่อไม่ยิงซ้ำ
       apiBusy = true;
-      pauseDecode_();
 
+      // ✅ ไม่พักกล้อง ไม่เปิด popup — แสดงผลบนการ์ดเหนือกล้องแทน
       try {
         await runSearch(text);
       } finally {
         apiBusy = false;
         bumpIdle_();
-        resumeDecode_();
       }
     });
+  }
+
+  // ====== Result UI ======
+
+  function showHint_(msg) {
+    if (!resultHint) return;
+    resultHint.textContent = msg;
+  }
+
+  function hideResult_() {
+    if (!resultCard) return;
+    resultCard.classList.add('is-hidden');
+    if (resultGrid) resultGrid.innerHTML = "";
+  }
+
+  function showResult_(kvPairs) {
+    // kvPairs: [{k:'Auto ID', v:'...'}, ...]
+    if (!resultCard || !resultGrid) return;
+
+    resultGrid.innerHTML = kvPairs.map(x => `
+      <div class="k">${escapeHtml(x.k)}</div>
+      <div class="v">${escapeHtml(x.v)}</div>
+    `).join("");
+
+    resultCard.classList.remove('is-hidden');
+    resultCard.classList.remove('flash');
+    void resultCard.offsetWidth; // reflow
+    resultCard.classList.add('flash');
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   // ====== Search / GAS JSONP ======
@@ -393,67 +387,76 @@ document.addEventListener('DOMContentLoaded', () => {
     query = String(query || "").trim().toUpperCase();
     if (!query) return;
 
+    showHint_(`กำลังค้นหา: ${query} ...`);
+
     try {
       const res = await gasJsonp({ action: "search", query });
+
       if (!res || !res.ok) throw new Error(res?.error || "API Error");
 
+      // ✅ คุณบอกว่าข้อมูลมีฟิลด์แบบนี้:
+      // Auto ID, Timestamp, DC, DC Name, ชื่อ-นามสกุล, เพศ, ชื่อบริษัท/ต้นสังกัด, เบอร์โทร, Timestamp Out, Duration
+      //
+      // ตอนนี้ฝั่ง GAS ส่งกลับ "html" -> เราจะ parse จากตารางเดิม (th/td) แล้ว map เป็น KV
       const htmlString = res.html || "";
       if (!htmlString) {
         playErrorSound();
-        await Swal.fire({
-          icon:'error',
-          title:'ไม่พบข้อมูล',
-          text:'กรุณาตรวจสอบข้อมูลการค้นหาอีกครั้ง',
-          confirmButtonText:'OK',
-          allowOutsideClick:false
-        });
-        searchInput.value = '';
+        showHint_('ไม่พบข้อมูล');
+        showResult_([{ k: 'ผลลัพธ์', v: 'ไม่พบข้อมูล (กรุณาตรวจสอบ Auto ID)' }]);
         return;
       }
 
-      // ✅ แสดงแบบเดิม: Popup ใหญ่ + ตาราง
-      // และยังไฮไลต์ Timestamp/Out ให้เหมือนเดิม
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlString, 'text/html');
-      const rows = doc.getElementsByTagName('tr');
+      const data = parseHtmlTableToKV_(htmlString);
 
-      for (const row of rows) {
-        const th = row.getElementsByTagName('th')[0];
-        if (!th) continue;
+      // ทำให้เรียงตามฟิลด์ที่คุณต้องการ
+      const orderedKeys = [
+        'Auto ID','Timestamp','DC','DC Name','ชื่อ-นามสกุล','เพศ','ชื่อบริษัท/ต้นสังกัด','เบอร์โทร','Timestamp Out','Duration'
+      ];
 
-        if (th.innerText === 'Timestamp') {
-          th.style.backgroundColor = '#FFFF99';
-          const td = row.getElementsByTagName('td')[0]; if (td) td.style.backgroundColor = '#FFFF99';
-        }
-        if (th.innerText === 'Timestamp Out') {
-          th.style.backgroundColor = '#00FFFF';
-          const td = row.getElementsByTagName('td')[0]; if (td) td.style.backgroundColor = '#00FFFF';
-        }
+      const kv = [];
+      const map = new Map(data.map(x => [x.k, x.v]));
+
+      // เติมตามลำดับ
+      for (const k of orderedKeys) {
+        if (map.has(k)) kv.push({ k, v: map.get(k) });
+      }
+      // คีย์อื่นๆ ที่เหลือ (กันตก)
+      for (const [k, v] of map.entries()) {
+        if (!orderedKeys.includes(k)) kv.push({ k, v });
       }
 
-      await Swal.fire({
-        title: 'ข้อมูล',
-        html: doc.body.innerHTML,
-        confirmButtonText: 'OK',
-        showCloseButton: true,
-        allowOutsideClick: false,
-        timer: 5000,
-        didOpen: () => bumpIdle_()
-      });
+      showHint_('สแกนสำเร็จ ✓');
+      showResult_(kv);
 
       searchInput.value = '';
 
     } catch (err) {
       console.error(err);
       playErrorSound();
-      await Swal.fire({
-        icon:'error',
-        title:'Error',
-        text: String(err?.message || err),
-        confirmButtonText:'OK',
-        allowOutsideClick:false
-      });
+      showHint_('เกิดข้อผิดพลาด');
+      showResult_([{ k: 'Error', v: String(err?.message || err) }]);
     }
+  }
+
+  function parseHtmlTableToKV_(htmlString) {
+    // คาดว่าเป็น <tr><th>Key</th><td>Value</td></tr> แบบเดิมของคุณ
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const rows = doc.getElementsByTagName('tr');
+    const out = [];
+
+    for (const row of rows) {
+      const th = row.getElementsByTagName('th')[0];
+      const td = row.getElementsByTagName('td')[0];
+      if (!th || !td) continue;
+
+      const k = (th.textContent || "").trim();
+      const v = (td.textContent || "").trim();
+      if (!k) continue;
+
+      out.push({ k, v });
+    }
+    return out;
   }
 
   function gasJsonp(params) {
@@ -507,9 +510,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const s = document.getElementById('scanSound');
     if (s) { s.volume = 1.0; s.play().catch(()=>{}); }
   }
-
   function playErrorSound() {
     const s = document.getElementById('errorSound');
     if (s) { s.volume = 1.0; s.play().catch(()=>{}); }
   }
+
+  // เริ่มต้นข้อความ
+  hideResult_();
+  setCamStatus_('กล้องปิดอยู่');
+  showHint_('พร้อมสแกน...');
 });
