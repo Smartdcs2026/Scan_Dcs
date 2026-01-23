@@ -48,16 +48,120 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!cameraStarted) return;
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      // ถ้าไม่มีการใช้งาน 30 วิ ให้ปิดกล้องเอง
+      // ถ้าไม่มี activity 30 วิ ให้ปิดกล้องเอง
       stopCamera(true);
     }, CAMERA_IDLE_TIMEOUT_MS);
   }
 
+  // ========= Toast (SweetAlert2) =========
+  const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    showCloseButton: true,
+    timer: 5200,
+    timerProgressBar: true,
+    didOpen: (toast) => {
+      toast.addEventListener('mouseenter', Swal.stopTimer);
+      toast.addEventListener('mouseleave', Swal.resumeTimer);
+    }
+  });
+
+  function esc(s){
+    return String(s ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#039;');
+  }
+
+  function showToastScanFull(data) {
+    // data: { autoId, tsIn, dc, dcName, fullName, gender, company, phone, tsOut, duration }
+    const lines = [
+      data.tsIn ? `Timestamp: ${data.tsIn}` : null,
+      data.tsOut ? `Timestamp Out: ${data.tsOut}` : null,
+      data.duration ? `Duration: ${data.duration}` : null,
+      (data.dc || data.dcName) ? `DC: ${data.dc || ''}${data.dcName ? ' - ' + data.dcName : ''}` : null,
+      data.fullName ? `ชื่อ: ${data.fullName}` : null,
+      data.gender ? `เพศ: ${data.gender}` : null,
+      data.company ? `บริษัท: ${data.company}` : null,
+      data.phone ? `เบอร์โทร: ${data.phone}` : null,
+    ].filter(Boolean);
+
+    // โชว์ไม่เกิน 6 บรรทัด (ไม่ล้นจอ)
+    const showLines = lines.slice(0, 6).map(x =>
+      `<div style="font-size:12px;line-height:1.25;opacity:.95">${esc(x)}</div>`
+    ).join('');
+
+    const extraCount = Math.max(0, lines.length - 6);
+
+    Toast.fire({
+      icon: 'success',
+      title: `
+        <div style="font-size:14px;font-weight:900;line-height:1.2">
+          บันทึกสำเร็จ
+        </div>
+      `,
+      html: `
+        <div style="text-align:left;min-width:260px;max-width:360px">
+          <div style="font-size:12px;opacity:.85;margin-top:2px">
+            <b>Auto ID:</b> ${esc(data.autoId || '-')}
+          </div>
+          ${showLines ? `<div style="margin-top:6px">${showLines}</div>` : ''}
+          ${
+            extraCount
+              ? `<div style="margin-top:6px;font-size:11px;opacity:.75">+ ข้อมูลเพิ่มอีก ${extraCount} รายการ</div>`
+              : ''
+          }
+        </div>
+      `
+    });
+  }
+
+  function showToastNotFound(autoId){
+    Toast.fire({
+      icon: 'warning',
+      title: `<div style="font-size:14px;font-weight:900">ไม่พบข้อมูล</div>`,
+      html: `
+        <div style="text-align:left;min-width:260px;max-width:360px">
+          <div style="font-size:12px;opacity:.9"><b>Auto ID:</b> ${esc(autoId || '-')}</div>
+          <div style="margin-top:6px;font-size:12px;opacity:.85">กรุณาตรวจสอบอีกครั้ง</div>
+        </div>
+      `,
+      timer: 5200
+    });
+  }
+
+  function showToastError(autoId, msg){
+    Toast.fire({
+      icon: 'error',
+      title: `<div style="font-size:14px;font-weight:900">เกิดข้อผิดพลาด</div>`,
+      html: `
+        <div style="text-align:left;min-width:260px;max-width:360px">
+          <div style="font-size:12px;opacity:.9"><b>Auto ID:</b> ${esc(autoId || '-')}</div>
+          <div style="margin-top:6px;font-size:12px;opacity:.85">${esc(msg || '')}</div>
+        </div>
+      `,
+      timer: 6500
+    });
+  }
+
   // ========= UX =========
   window.onclick = (e) => { if (e.target.id !== 'cameraSelect') searchInput.focus(); };
-  searchInput.addEventListener('input', () => { searchInput.value = searchInput.value.toUpperCase(); bumpIdle_(); });
-  searchBtn.addEventListener('click', () => { bumpIdle_(); runSearch(searchInput.value); });
-  searchInput.addEventListener('keyup', (e) => { bumpIdle_(); if (e.key === 'Enter') runSearch(searchInput.value); });
+
+  searchInput.addEventListener('input', () => {
+    searchInput.value = searchInput.value.toUpperCase();
+    bumpIdle_();
+  });
+
+  searchBtn.addEventListener('click', () => {
+    bumpIdle_();
+    runSearch(searchInput.value);
+  });
+
+  searchInput.addEventListener('keyup', (e) => {
+    bumpIdle_();
+    if (e.key === 'Enter') runSearch(searchInput.value);
+  });
 
   // ✅ ขอ permission เฉพาะจาก user gesture
   startButton.addEventListener('click', async () => {
@@ -135,7 +239,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function startFlow_() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      return Swal.fire({ icon:'error', title:'ไม่รองรับกล้อง', text:'เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง', confirmButtonText:'OK' });
+      return Swal.fire({
+        icon:'error',
+        title:'ไม่รองรับกล้อง',
+        text:'เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง',
+        confirmButtonText:'OK'
+      });
     }
 
     // ลดปัญหา permission ใน in-app browser
@@ -198,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function openCameraOnce_() {
+    // ปิดก่อนเผื่อค้าง (fromIdle=true เพื่อไม่ขึ้น dialog)
     await stopCamera(true);
 
     const tryOpen = async (constraints) => {
@@ -279,19 +389,16 @@ document.addEventListener('DOMContentLoaded', () => {
     try { qrVideo.pause(); } catch (_) {}
     qrVideo.srcObject = null;
 
-    if (!fromIdle) {
-      // ถ้าผู้ใช้กดปิดเอง ไม่ต้องแจ้งอะไร
-      return;
+    if (fromIdle) {
+      Toast.fire({
+        icon: 'info',
+        title: `<div style="font-size:14px;font-weight:900">ปิดกล้องอัตโนมัติ</div>`,
+        html: `<div style="text-align:left;min-width:260px;max-width:360px;font-size:12px;opacity:.9">
+          ไม่มีการใช้งานเกิน 30 วินาที ระบบปิดกล้องให้เพื่อประหยัดแบตเตอรี่
+        </div>`,
+        timer: 2200
+      });
     }
-
-    // ปิดเองเพราะ idle 30 วิ
-    Swal.fire({
-      icon: 'info',
-      title: 'ปิดกล้องอัตโนมัติ',
-      text: 'ไม่มีการใช้งานเกิน 30 วินาที ระบบปิดกล้องให้เพื่อประหยัดแบตเตอรี่',
-      timer: 1800,
-      showConfirmButton: false
-    });
   }
 
   // ======== Decode control (pause/resume) ========
@@ -359,56 +466,47 @@ document.addEventListener('DOMContentLoaded', () => {
       const htmlString = res.html || "";
       if (!htmlString) {
         playErrorSound();
-        await Swal.fire({
-          icon:'error',
-          title:'ไม่พบข้อมูล',
-          text:'กรุณาตรวจสอบข้อมูลการค้นหาอีกครั้ง',
-          confirmButtonText:'OK',
-          allowOutsideClick:false
-        });
+        showToastNotFound(query);
         searchInput.value = '';
         return;
       }
 
+      // ===== parse ตาราง th/td =====
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlString, 'text/html');
-      const rows = doc.getElementsByTagName('tr');
+      const rows = Array.from(doc.querySelectorAll('tr'));
 
-      for (const row of rows) {
-        const th = row.getElementsByTagName('th')[0];
-        if (!th) continue;
-
-        if (th.innerText === 'Timestamp') {
-          th.style.backgroundColor = '#FFFF99';
-          const td = row.getElementsByTagName('td')[0]; if (td) td.style.backgroundColor = '#FFFF99';
-        }
-        if (th.innerText === 'Timestamp Out') {
-          th.style.backgroundColor = '#00FFFF';
-          const td = row.getElementsByTagName('td')[0]; if (td) td.style.backgroundColor = '#00FFFF';
-        }
-      }
-
-      await Swal.fire({
-        title: 'ข้อมูล',
-        html: doc.body.innerHTML,
-        confirmButtonText: 'OK',
-        showCloseButton: true,
-        allowOutsideClick: false,
-        timer: 5000
+      const map = {};
+      rows.forEach(r => {
+        const th = r.querySelector('th');
+        const td = r.querySelector('td');
+        if (!th || !td) return;
+        const k = (th.innerText || '').trim();
+        const v = (td.innerText || '').trim();
+        if (k) map[k] = v;
       });
 
+      // ===== map ตามฟิลด์ของคุณ =====
+      const data = {
+        autoId: map['Auto ID'] || query,
+        tsIn: map['Timestamp'] || '',
+        dc: map['DC'] || '',
+        dcName: map['DC Name'] || '',
+        fullName: map['ชื่อ-นามสกุล'] || '',
+        gender: map['เพศ'] || '',
+        company: map['ชื่อบริษัท/ต้นสังกัด'] || '',
+        phone: map['เบอร์โทร'] || '',
+        tsOut: map['Timestamp Out'] || '',
+        duration: map['Duration'] || ''
+      };
+
+      showToastScanFull(data);
       searchInput.value = '';
 
     } catch (err) {
       console.error(err);
       playErrorSound();
-      await Swal.fire({
-        icon:'error',
-        title:'Error',
-        text: String(err?.message || err),
-        confirmButtonText:'OK',
-        allowOutsideClick:false
-      });
+      showToastError(query, String(err?.message || err));
 
       // auto restart decode (ไม่ reopen camera เพื่อกัน prompt ซ้ำ)
       setTimeout(() => {
