@@ -9,12 +9,8 @@ const SAME_CODE_HOLD_MS  = 1800;
 const API_LOCK_TIMEOUT   = 15000;
 const AUTO_RESTART_MS    = 1200;
 
-// ===== Camera behavior =====
-const CAMERA_IDLE_STOP_MS = 30000;     // ✅ 30 วินาที: ถ้าไม่มีการใช้งาน ปิดกล้องอัตโนมัติ
-const CAMERA_OPEN_TIMEOUT = 12000;     // กันค้างตอนเปิดกล้อง
-const CAMERA_W = 1280;                 // จำกัดความละเอียดเพื่อความนิ่ง/เร็ว
-const CAMERA_H = 720;
-const CAMERA_FPS = 30;
+// ✅ Auto-stop camera if idle
+const CAMERA_IDLE_TIMEOUT_MS = 30000; // 30s
 
 document.addEventListener('DOMContentLoaded', () => {
   // ===== PWA: Service Worker =====
@@ -43,19 +39,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeStream = null;
   let starting = false;
 
-  // ✅ Idle timer (auto stop)
+  // decode control
+  let decoding = false;
+
+  // ✅ Idle timer
   let idleTimer = null;
+  function bumpIdle_() {
+    if (!cameraStarted) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      // ถ้าไม่มีการใช้งาน 30 วิ ให้ปิดกล้องเอง
+      stopCamera(true);
+    }, CAMERA_IDLE_TIMEOUT_MS);
+  }
 
   // ========= UX =========
   window.onclick = (e) => { if (e.target.id !== 'cameraSelect') searchInput.focus(); };
-  searchInput.addEventListener('input', () => { searchInput.value = searchInput.value.toUpperCase(); touchIdle_(); });
-  searchBtn.addEventListener('click', () => { touchIdle_(); runSearch(searchInput.value); });
-  searchInput.addEventListener('keyup', (e) => { touchIdle_(); if (e.key === 'Enter') runSearch(searchInput.value); });
-
-  // ✅ “ใช้งาน” อื่น ๆ ก็รีเซ็ต timer (กันปิดเองตอนผู้ใช้กำลังดูผล)
-  ["click","touchstart","keydown","scroll"].forEach(evt => {
-    window.addEventListener(evt, () => { if (cameraStarted) touchIdle_(); }, { passive:true });
-  });
+  searchInput.addEventListener('input', () => { searchInput.value = searchInput.value.toUpperCase(); bumpIdle_(); });
+  searchBtn.addEventListener('click', () => { bumpIdle_(); runSearch(searchInput.value); });
+  searchInput.addEventListener('keyup', (e) => { bumpIdle_(); if (e.key === 'Enter') runSearch(searchInput.value); });
 
   // ✅ ขอ permission เฉพาะจาก user gesture
   startButton.addEventListener('click', async () => {
@@ -68,10 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  stopButton.addEventListener('click', () => stopCamera(true));
+  stopButton.addEventListener('click', () => stopCamera(false));
 
   cameraSelect.addEventListener('change', async () => {
     if (!cameraStarted) return;
+    bumpIdle_();
     await restartWithDevice_(cameraSelect.value);
   });
 
@@ -83,35 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isInAppBrowser_() {
     const ua = navigator.userAgent || "";
-    return /Line|FBAN|FBAV|Instagram|Messenger|TikTok/i.test(ua);
-  }
-
-  function startIdleTimer_() {
-    clearIdleTimer_();
-    idleTimer = setTimeout(() => {
-      // ✅ ปิดกล้องอัตโนมัติ
-      stopCamera(true);
-      Swal.fire({
-        icon: 'info',
-        title: 'ปิดกล้องอัตโนมัติ',
-        text: 'ไม่มีการใช้งานกล้องภายใน 30 วินาที',
-        timer: 1800,
-        showConfirmButton: false
-      });
-    }, CAMERA_IDLE_STOP_MS);
-  }
-
-  function clearIdleTimer_() {
-    if (idleTimer) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-  }
-
-  function touchIdle_() {
-    // เรียกเมื่อมี “กิจกรรม” ที่ถือว่าใช้งาน
-    if (!cameraStarted) return;
-    startIdleTimer_();
+    return /Line|FBAN|FBAV|Instagram/i.test(ua);
   }
 
   async function queryCameraPermission_() {
@@ -153,16 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!currentDeviceId) currentDeviceId = def;
     if (currentDeviceId) cameraSelect.value = currentDeviceId;
 
-    // UX: ถ้ามีกล้องเดียว ซ่อน dropdown
     cameraSelect.style.display = (cams.length <= 1) ? "none" : "block";
-  }
-
-  function withTimeout_(promise, ms, msg) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(msg || "timeout")), ms);
-      promise.then(v => { clearTimeout(t); resolve(v); })
-             .catch(e => { clearTimeout(t); reject(e); });
-    });
   }
 
   // ======== Camera flow ========
@@ -172,28 +138,27 @@ document.addEventListener('DOMContentLoaded', () => {
       return Swal.fire({ icon:'error', title:'ไม่รองรับกล้อง', text:'เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง', confirmButtonText:'OK' });
     }
 
-    // เตือน in-app browser (ช่วยลดปัญหา permission เด้ง/เลือกกล้องไม่ได้)
+    // ลดปัญหา permission ใน in-app browser
     if (isInAppBrowser_()) {
       await Swal.fire({
         icon: 'info',
         title: 'แนะนำให้เปิดด้วย Chrome/Safari',
         html: `<div style="font-size:14px;text-align:left">
-          ตรวจพบว่าเปิดผ่าน in-app browser (LINE/FB/IG) ซึ่งบางเครื่องอาจขออนุญาตซ้ำหรือเปิดกล้องไม่ได้<br>
+          บางเครื่องเมื่อเปิดผ่าน LINE/FB/IG จะขออนุญาตซ้ำหรือเปิดกล้องไม่ได้<br>
           แนะนำ: เปิดลิงก์นี้ด้วย Chrome/Safari โดยตรง หรือ “Add to Home Screen” (PWA)
         </div>`,
         confirmButtonText: 'เข้าใจแล้ว'
       });
     }
 
-    // ถ้ากล้องยัง live อยู่ → ไม่ขอ permission ใหม่
+    // ถ้ายัง live อยู่ → ไม่ขอใหม่
     if (activeStream && activeStream.getTracks().some(t => t.readyState === "live")) {
       cameraStarted = true;
-      startIdleTimer_();
-      decodeLoop_(currentDeviceId || null);
+      bumpIdle_();
+      resumeDecode_();
       return;
     }
 
-    // ถ้า permission denied → ไม่พยายามขอซ้ำ
     const p = await queryCameraPermission_();
     if (p === "denied") {
       return Swal.fire({
@@ -209,7 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // เปิดกล้อง “ครั้งเดียว” (prompt จะเกิดหลัก ๆ ตอนนี้)
     try {
       await openCameraOnce_();
     } catch (err) {
@@ -225,21 +189,19 @@ document.addEventListener('DOMContentLoaded', () => {
       return Swal.fire({ icon:'error', title:'เปิดกล้องไม่สำเร็จ', text: msg, confirmButtonText:'OK' });
     }
 
-    // หลังได้ permission แล้ว ค่อย refresh รายชื่อกล้องเพื่อให้ label มาเต็ม
+    // หลังได้ permission แล้ว refresh list เพื่อ label เต็ม
     try { await refreshCameraSelect_(); } catch (_) {}
 
     cameraStarted = true;
-    startIdleTimer_();
-    decodeLoop_(currentDeviceId || null);
+    bumpIdle_();
+    resumeDecode_();
   }
 
   async function openCameraOnce_() {
-    await stopCamera(false); // กันค้าง แต่ไม่ต้อง popup
+    await stopCamera(true);
 
     const tryOpen = async (constraints) => {
-      const p = navigator.mediaDevices.getUserMedia(constraints);
-      const stream = await withTimeout_(p, CAMERA_OPEN_TIMEOUT, "เปิดกล้องนานเกินไป (timeout)");
-
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       activeStream = stream;
       qrVideo.srcObject = stream;
       await qrVideo.play();
@@ -248,16 +210,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const wantDeviceId = cameraSelect.value || currentDeviceId || "";
 
-    // Try 1: deviceId exact
+    // Try 1: exact deviceId
     if (wantDeviceId) {
       try {
         await tryOpen({
           audio: false,
           video: {
             deviceId: { exact: wantDeviceId },
-            width: { ideal: CAMERA_W },
-            height: { ideal: CAMERA_H },
-            frameRate: { ideal: CAMERA_FPS, max: CAMERA_FPS }
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 30 }
           }
         });
         currentDeviceId = wantDeviceId;
@@ -265,36 +227,20 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (_) {}
     }
 
-    // Try 2: deviceId ideal
-    if (wantDeviceId) {
-      try {
-        await tryOpen({
-          audio: false,
-          video: {
-            deviceId: { ideal: wantDeviceId },
-            width: { ideal: CAMERA_W },
-            height: { ideal: CAMERA_H }
-          }
-        });
-        currentDeviceId = wantDeviceId;
-        return;
-      } catch (_) {}
-    }
-
-    // Try 3: environment (มือถือ)
+    // Try 2: environment
     try {
       await tryOpen({
         audio: false,
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: CAMERA_W },
-          height: { ideal: CAMERA_H }
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
       });
       return;
     } catch (_) {}
 
-    // Try 4: browser choose
+    // Try 3: browser choose
     await tryOpen({ video: true, audio: false });
   }
 
@@ -303,11 +249,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await openCameraOnce_();
       cameraStarted = true;
-      startIdleTimer_();
-      decodeLoop_(currentDeviceId || null);
+      bumpIdle_();
+      resumeDecode_();
     } catch (err) {
       cameraStarted = false;
-      clearIdleTimer_();
       Swal.fire({
         icon: 'error',
         title: 'สลับกล้องไม่สำเร็จ',
@@ -317,10 +262,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function stopCamera(showMsg) {
+  async function stopCamera(fromIdle) {
     apiBusy = false;
     cameraStarted = false;
-    clearIdleTimer_();
+    decoding = false;
+
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
 
     try { codeReader.reset(); } catch (_) {}
 
@@ -332,22 +279,43 @@ document.addEventListener('DOMContentLoaded', () => {
     try { qrVideo.pause(); } catch (_) {}
     qrVideo.srcObject = null;
 
-    if (showMsg === true) {
-      // ไม่จำเป็นต้องโชว์ทุกครั้ง—ปล่อยว่างไว้
+    if (!fromIdle) {
+      // ถ้าผู้ใช้กดปิดเอง ไม่ต้องแจ้งอะไร
+      return;
     }
+
+    // ปิดเองเพราะ idle 30 วิ
+    Swal.fire({
+      icon: 'info',
+      title: 'ปิดกล้องอัตโนมัติ',
+      text: 'ไม่มีการใช้งานเกิน 30 วินาที ระบบปิดกล้องให้เพื่อประหยัดแบตเตอรี่',
+      timer: 1800,
+      showConfirmButton: false
+    });
   }
 
-  // ======== Decode ========
+  // ======== Decode control (pause/resume) ========
+
+  function pauseDecode_() {
+    decoding = false;
+    try { codeReader.reset(); } catch (_) {}
+  }
+
+  function resumeDecode_() {
+    if (!cameraStarted) return;
+    if (decoding) return;
+    decoding = true;
+    decodeLoop_(currentDeviceId || null);
+  }
 
   function decodeLoop_(deviceIdOrNull) {
     try { codeReader.reset(); } catch (_) {}
 
     codeReader.decodeFromVideoDevice(deviceIdOrNull, qrVideo, async (result, err) => {
-      if (!cameraStarted) return;
+      if (!decoding) return;
       if (!result) return;
 
-      // ✅ สแกนได้ = ถือว่า “ใช้งาน” รีเซ็ต idle timer
-      touchIdle_();
+      bumpIdle_(); // มี activity
 
       const now = Date.now();
       if (apiBusy) return;
@@ -364,23 +332,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       playScanSound();
 
-      // ระหว่างยิง API “พักสแกน” (นิ่งสุด)
+      // ✅ นิ่งสุด: พัก decode ระหว่างทำงาน แล้วค่อย resume
       apiBusy = true;
+      pauseDecode_();
+
       try {
-        try { codeReader.reset(); } catch (_) {}
         await runSearch(text);
       } finally {
         apiBusy = false;
-        if (cameraStarted) {
-          startIdleTimer_();
-          decodeLoop_(currentDeviceId || null);
-        }
+        bumpIdle_();
+        // กลับมาสแกนต่อทันที
+        resumeDecode_();
       }
     });
   }
 
   // ====== Search / GAS JSONP ======
-
   async function runSearch(query) {
     query = String(query || "").trim().toUpperCase();
     if (!query) return;
@@ -443,9 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
         allowOutsideClick:false
       });
 
-      // auto restart (แต่ไม่ควรทำให้เด้ง permission ซ้ำ)
+      // auto restart decode (ไม่ reopen camera เพื่อกัน prompt ซ้ำ)
       setTimeout(() => {
-        if (!cameraStarted) startFlow_().catch(()=>{});
+        if (cameraStarted) resumeDecode_();
       }, AUTO_RESTART_MS);
     }
   }
