@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
@@ -72,6 +72,70 @@
     <marquee behavior="scroll" direction="left" scrollamount="8">
       © สร้างและพัฒนาโดย S&amp;LP สามโคก
     </marquee>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
+ -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>บันทึกเวลาออก</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#00BFB2">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <div class="container">
+      <h1>บันทึกเวลาออก</h1>
+      <p class="subtitle">สแกน QR หรือป้อน Auto ID เพื่อบันทึกเวลาออก/เข้า</p>
+
+      <div id="scanResult" class="result-card is-hidden" aria-live="polite">
+        <div class="result-top">
+          <div>
+            <div class="result-title">ผลการสแกน</div>
+            <div class="result-sub" id="resultHint">พร้อมสแกน...</div>
+          </div>
+          <button id="clearResult" class="result-btn" type="button">ล้าง</button>
+        </div>
+        <div class="result-grid" id="resultGrid"></div>
+      </div>
+
+      <div class="video-wrap">
+        <video id="qrVideo" autoplay muted playsinline webkit-playsinline></video>
+        <div id="cameraStatus" class="camera-status" data-state="idle">กล้องปิดอยู่</div>
+      </div>
+
+      <div class="field-group">
+        <input type="text" id="searchInput" placeholder="ป้อนเลข Auto ID" autocomplete="off" inputmode="text" />
+        <button id="searchBtn" class="primary-btn" type="button">บันทึกเวลาออก/เข้า</button>
+      </div>
+
+      <select id="cameraSelect" aria-label="เลือกกล้อง"></select>
+
+      <div class="button-container">
+        <button id="startCamera" class="secondary-btn" type="button">เปิดกล้อง</button>
+        <button id="stopCamera" class="danger-btn" type="button">ปิดกล้อง</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="marquee-container">
+    <marquee behavior="scroll" direction="left" scrollamount="10">© สร้างและพัฒนาโดย S&amp;LP สามโคก</marquee>
   </div>
 
   <script src="./app.js"></script>
