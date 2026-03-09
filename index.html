@@ -5,7 +5,6 @@
   <title>บันทึกเวลาออก</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-  <!-- PWA -->
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#00BFB2">
   <meta name="mobile-web-app-capable" content="yes">
@@ -15,55 +14,48 @@
 
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-  <!-- ZXing UMD -->
   <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
   <link rel="stylesheet" href="./styles.css" />
 </head>
-
 <body>
-  <div class="container">
-    <h1>บันทึกเวลาออก</h1>
+  <div class="page-shell">
+    <div class="container">
+      <h1>บันทึกเวลาออก</h1>
+      <p class="subtitle">สแกน QR หรือป้อน Auto ID เพื่อบันทึกเวลาออก/เข้า</p>
 
-    <!-- ✅ ผลลัพธ์เหนือกล้อง (Overlay Card) -->
-    <div id="scanResult" class="result-card is-hidden" aria-live="polite">
-      <div class="result-top">
-        <div>
-          <div class="result-title">ผลการสแกน</div>
-          <div class="result-sub" id="resultHint">พร้อมสแกน...</div>
+      <div id="scanResult" class="result-card is-hidden" aria-live="polite">
+        <div class="result-top">
+          <div>
+            <div class="result-title">ผลการสแกน</div>
+            <div class="result-sub" id="resultHint">พร้อมสแกน...</div>
+          </div>
+          <button id="clearResult" class="result-btn" type="button">ล้าง</button>
         </div>
-        <button id="clearResult" class="result-btn" type="button">ล้าง</button>
+        <div class="result-grid" id="resultGrid"></div>
       </div>
 
-      <div class="result-grid" id="resultGrid"></div>
-    </div>
+      <div class="video-wrap">
+        <video id="qrVideo" muted playsinline></video>
+        <div id="cameraStatus" class="camera-status" data-state="idle">กล้องปิดอยู่</div>
+      </div>
 
-    <div class="video-wrap">
-      <video id="qrVideo" muted playsinline></video>
-      <div id="cameraStatus" class="camera-status">กล้องปิดอยู่</div>
-    </div>
+      <div class="field-group">
+        <input type="text" id="searchInput" placeholder="ป้อนเลข Auto ID" autocomplete="off" />
+        <button id="searchBtn" class="primary-btn">บันทึกเวลาออก/เข้า</button>
+      </div>
 
-    <input type="text" id="searchInput" placeholder="ป้อนเลข Auto ID" />
-    <button id="searchBtn">บันทึกเวลาออก/เข้า</button>
+      <select id="cameraSelect"></select>
 
-    <select id="cameraSelect"></select>
-
-    <div class="button-container">
-      <button id="startCamera">เปิดกล้อง</button>
-      <button id="stopCamera">ปิดกล้อง</button>
+      <div class="button-container">
+        <button id="startCamera" class="secondary-btn">เปิดกล้อง</button>
+        <button id="stopCamera" class="danger-btn">ปิดกล้อง</button>
+      </div>
     </div>
   </div>
 
-  <audio id="scanSound" crossorigin="anonymous">
-    <source src="https://drive.lienuc.com/uc?id=1d3B-XLXvmHht9mKXbdKt881eLTcH0ihT" type="audio/mp3">
-  </audio>
-  <audio id="errorSound" crossorigin="anonymous">
-    <source src="https://drive.lienuc.com/uc?id=1htGYthoXPvxl5dDo6qTIRIBz-9TzLYww" type="audio/mp3">
-  </audio>
-
   <div class="marquee-container">
-    <marquee behavior="scroll" direction="left" scrollamount="10">© สร้างและพัฒนาโดย S&LP สามโคก</marquee>
+    <marquee behavior="scroll" direction="left" scrollamount="10">© สร้างและพัฒนาโดย S&amp;LP สามโคก</marquee>
   </div>
 
   <script src="./app.js"></script>
