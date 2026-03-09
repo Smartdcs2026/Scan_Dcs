@@ -4008,7 +4008,7 @@ async function runSearch(query) {
         icon: "success",
         title: res.title || "บันทึกสำเร็จ",
         text: res.detail || "",
-        timer: 2000,
+        timer: 1200,
         showConfirmButton: false,
         allowOutsideClick: true,
         allowEscapeKey: true
@@ -4027,7 +4027,7 @@ async function runSearch(query) {
         icon: "warning",
         title: res.title || "บันทึกซ้ำไม่ได้",
         text: res.detail || "",
-        timer: 2000,
+        timer: 1800,
         showConfirmButton: false,
         allowOutsideClick: true,
         allowEscapeKey: true
@@ -4046,7 +4046,7 @@ async function runSearch(query) {
         icon: "warning",
         title: res.title || "ไม่พบข้อมูล",
         text: res.detail || "",
-        timer: 2000,
+        timer: 1800,
         showConfirmButton: false,
         allowOutsideClick: true,
         allowEscapeKey: true
@@ -4127,4 +4127,5 @@ async function runSearch(query) {
 
   setCameraStatus("กล้องปิดอยู่", "idle");
 });
+
 
