@@ -3358,53 +3358,899 @@
 // });
 
 
+// const API_BASE = "https://visitor-entry-api.somchaibutphon.workers.dev";
+
+// const SCAN_COOLDOWN_MS = 900;
+// const SAME_CODE_HOLD_MS = 1800;
+// const API_TIMEOUT_MS = 20000;
+// const AUTO_RESTART_MS = 900;
+// const CAMERA_IDLE_TIMEOUT_MS = 120000;
+// const RETRY_DELAY_MS = 900;
+// const MAX_API_RETRY = 1;
+
+// document.addEventListener('DOMContentLoaded', () => {
+//   if ("serviceWorker" in navigator) {
+//     navigator.serviceWorker.register("./sw.js").catch(() => {});
+//   }
+
+//   const searchInput   = document.getElementById('searchInput');
+//   const searchBtn     = document.getElementById('searchBtn');
+//   const qrVideo       = document.getElementById('qrVideo');
+//   const cameraSelect  = document.getElementById('cameraSelect');
+//   const startButton   = document.getElementById('startCamera');
+//   const stopButton    = document.getElementById('stopCamera');
+//   const cameraStatus  = document.getElementById('cameraStatus');
+
+//   const resultCard    = document.getElementById('scanResult');
+//   const resultGrid    = document.getElementById('resultGrid');
+//   const resultHint    = document.getElementById('resultHint');
+//   const clearResult   = document.getElementById('clearResult');
+
+//   const zxingReader = new ZXing.BrowserQRCodeReader();
+
+//   let currentDeviceId = "";
+//   let cameraStarted = false;
+//   let starting = false;
+//   let scanning = false;
+//   let apiBusy = false;
+//   let lastScanAt = 0;
+//   let lastText = "";
+//   let lastTextAt = 0;
+//   let activeStream = null;
+//   let idleTimer = null;
+//   let currentRequestId = 0;
+//   let videoTrack = null;
+//   let barcodeDetector = null;
+//   let detectorTimer = null;
+//   let audioCtx = null;
+
+//   initDetector_();
+
+//   function initDetector_() {
+//     try {
+//       if ("BarcodeDetector" in window) {
+//         barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] });
+//       }
+//     } catch (_) {
+//       barcodeDetector = null;
+//     }
+//   }
+
+//   function setCameraStatus(text, type = "idle") {
+//     cameraStatus.textContent = text || "";
+//     cameraStatus.dataset.state = type;
+//   }
+
+//   function getAudioCtx_() {
+//     if (!audioCtx) {
+//       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+//     }
+//     return audioCtx;
+//   }
+
+//   async function unlockAudio_() {
+//     try {
+//       const ctx = getAudioCtx_();
+//       if (ctx.state === "suspended") await ctx.resume();
+
+//       const o = ctx.createOscillator();
+//       const g = ctx.createGain();
+//       g.gain.value = 0.0001;
+//       o.frequency.value = 1;
+//       o.connect(g);
+//       g.connect(ctx.destination);
+//       o.start();
+//       o.stop(ctx.currentTime + 0.02);
+//     } catch (_) {}
+//   }
+
+//   function playTone_(freq, ms, type, gain) {
+//     (async () => {
+//       try {
+//         const ctx = getAudioCtx_();
+//         if (ctx.state === "suspended") await ctx.resume();
+
+//         const o = ctx.createOscillator();
+//         const g = ctx.createGain();
+//         o.type = type || "sine";
+//         o.frequency.value = freq;
+//         g.gain.value = gain ?? 0.22;
+
+//         o.connect(g);
+//         g.connect(ctx.destination);
+
+//         const t0 = ctx.currentTime;
+//         g.gain.setValueAtTime(0.0001, t0);
+//         g.gain.exponentialRampToValueAtTime(Math.max(0.0001, g.gain.value), t0 + 0.01);
+//         g.gain.exponentialRampToValueAtTime(0.0001, t0 + (ms / 1000));
+
+//         o.start(t0);
+//         o.stop(t0 + (ms / 1000) + 0.02);
+//       } catch (_) {}
+//     })();
+//   }
+
+//   function playScanSound() {
+//     playTone_(1400, 120, "sine", 0.25);
+//   }
+
+//   function playErrorSound() {
+//     playTone_(260, 160, "square", 0.22);
+//     setTimeout(() => playTone_(220, 170, "square", 0.22), 180);
+//   }
+
+//   document.addEventListener("click", unlockAudio_, { passive: true });
+//   document.addEventListener("touchstart", unlockAudio_, { passive: true });
+//   document.addEventListener("pointerdown", unlockAudio_, { passive: true });
+
+//   function bumpIdle_() {
+//     if (!cameraStarted) return;
+//     if (idleTimer) clearTimeout(idleTimer);
+//     idleTimer = setTimeout(() => stopCamera(true), CAMERA_IDLE_TIMEOUT_MS);
+//   }
+
+//   function showResult(record = {}, hint = "") {
+//     resultGrid.innerHTML = "";
+//     resultHint.textContent = hint || "บันทึกสำเร็จ";
+//     resultCard.classList.remove("is-hidden");
+//     resultCard.classList.add("flash");
+
+//     const preferredOrder = [
+//       "Auto ID", "รหัส", "ชื่อ-นามสกุล", "ชื่อ-สกุล", "เพศ", "เบอร์โทร",
+//       "DC", "DC Name", "Timestamp", "Timestamp IN", "Timestamp Out", "Duration"
+//     ];
+
+//     const used = new Set();
+//     const keys = [];
+
+//     preferredOrder.forEach(k => {
+//       if (record[k] != null && record[k] !== "") {
+//         keys.push(k);
+//         used.add(k);
+//       }
+//     });
+
+//     Object.keys(record).forEach(k => {
+//       if (!used.has(k) && record[k] != null && record[k] !== "") keys.push(k);
+//     });
+
+//     keys.forEach(key => {
+//       const k = document.createElement("div");
+//       k.className = "k";
+//       k.textContent = key;
+
+//       const v = document.createElement("div");
+//       v.className = "v";
+//       v.textContent = String(record[key]);
+
+//       if (key === "Timestamp" || key === "Timestamp IN") {
+//         k.classList.add("hl-in");
+//         v.classList.add("hl-in");
+//       }
+//       if (key === "Timestamp Out") {
+//         k.classList.add("hl-out");
+//         v.classList.add("hl-out");
+//       }
+//       if (key === "Duration") {
+//         k.classList.add("hl-dur");
+//         v.classList.add("hl-dur");
+//       }
+
+//       resultGrid.appendChild(k);
+//       resultGrid.appendChild(v);
+//     });
+
+//     setTimeout(() => resultCard.classList.remove("flash"), 250);
+//   }
+
+//   function clearResultCard_() {
+//     resultGrid.innerHTML = "";
+//     resultHint.textContent = "พร้อมสแกน...";
+//     resultCard.classList.add("is-hidden");
+//   }
+
+//   clearResult.addEventListener("click", clearResultCard_);
+
+//   searchInput.addEventListener("input", () => {
+//     searchInput.value = String(searchInput.value || "").toUpperCase().trim();
+//     bumpIdle_();
+//   });
+
+//   searchBtn.addEventListener("click", () => {
+//     bumpIdle_();
+//     runSearch(searchInput.value);
+//   });
+
+//   searchInput.addEventListener("keyup", (e) => {
+//     bumpIdle_();
+//     if (e.key === "Enter") runSearch(searchInput.value);
+//   });
+
+//   startButton.addEventListener("click", async () => {
+//     if (starting) return;
+//     starting = true;
+//     try {
+//       await unlockAudio_();
+//       await startFlow_();
+//     } finally {
+//       starting = false;
+//     }
+//   });
+
+//   stopButton.addEventListener("click", () => stopCamera(false));
+
+//   cameraSelect.addEventListener("change", async () => {
+//     if (!cameraStarted) return;
+//     bumpIdle_();
+//     await restartWithDevice_(cameraSelect.value);
+//   });
+
+//   function isMobile_() {
+//     return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+//   }
+
+//   function isInAppBrowser_() {
+//     const ua = navigator.userAgent || "";
+//     return /Line|FBAN|FBAV|Instagram/i.test(ua);
+//   }
+
+//   async function queryCameraPermission_() {
+//     try {
+//       if (!navigator.permissions?.query) return "unknown";
+//       const p = await navigator.permissions.query({ name: "camera" });
+//       return p.state || "unknown";
+//     } catch (_) {
+//       return "unknown";
+//     }
+//   }
+
+//   async function listVideoDevices_() {
+//     const devices = await navigator.mediaDevices.enumerateDevices();
+//     return devices.filter(d => d.kind === "videoinput");
+//   }
+
+//   function pickDefaultDevice_(devices) {
+//     if (!devices?.length) return "";
+//     if (isMobile_()) {
+//       const back = devices.find(d => /back|rear|environment/i.test(d.label || ""));
+//       return back?.deviceId || devices[0].deviceId || "";
+//     }
+//     return devices[0].deviceId || "";
+//   }
+
+//   async function refreshCameraSelect_() {
+//     const cams = await listVideoDevices_();
+//     cameraSelect.innerHTML = "";
+
+//     cams.forEach((d, idx) => {
+//       const opt = document.createElement("option");
+//       opt.value = d.deviceId || "";
+//       opt.textContent = d.label || `Camera ${idx + 1}`;
+//       cameraSelect.appendChild(opt);
+//     });
+
+//     const def = pickDefaultDevice_(cams);
+//     if (!currentDeviceId) currentDeviceId = def;
+//     if (currentDeviceId) cameraSelect.value = currentDeviceId;
+
+//     cameraSelect.style.display = cams.length <= 1 ? "none" : "block";
+//   }
+
+//   async function startFlow_() {
+//     if (!navigator.mediaDevices?.getUserMedia) {
+//       playErrorSound();
+//       return Swal.fire({
+//         icon: "error",
+//         title: "ไม่รองรับกล้อง",
+//         text: "เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง",
+//         confirmButtonText: "ตกลง"
+//       });
+//     }
+
+//     if (isInAppBrowser_()) {
+//       await Swal.fire({
+//         icon: "info",
+//         title: "แนะนำให้เปิดด้วย Chrome / Safari",
+//         html: `<div style="font-size:14px;text-align:left">
+//           บางเครื่องเมื่อเปิดผ่าน LINE / Facebook / Instagram จะเปิดกล้องไม่เสถียร<br>
+//           แนะนำให้เปิดผ่าน Chrome, Safari หรือ Add to Home Screen
+//         </div>`,
+//         confirmButtonText: "เข้าใจแล้ว"
+//       });
+//     }
+
+//     const p = await queryCameraPermission_();
+//     if (p === "denied") {
+//       playErrorSound();
+//       return Swal.fire({
+//         icon: "warning",
+//         title: "ไม่ได้รับอนุญาตใช้กล้อง",
+//         html: `<div style="text-align:left;font-size:14px">
+//           กรุณาอนุญาตกล้องในการตั้งค่า แล้วกลับมากด “เปิดกล้อง” อีกครั้ง
+//         </div>`,
+//         confirmButtonText: "ตกลง",
+//         allowOutsideClick: false
+//       });
+//     }
+
+//     try {
+//       setCameraStatus("กำลังเปิดกล้อง...", "loading");
+//       await openCameraOnce_();
+//       await refreshCameraSelect_();
+//       cameraStarted = true;
+//       setCameraStatus("กล้องพร้อมสแกน", "live");
+//       bumpIdle_();
+//       startDecode_();
+//     } catch (err) {
+//       console.error(err);
+//       playErrorSound();
+//       setCameraStatus("เปิดกล้องไม่สำเร็จ", "error");
+
+//       let msg = "ไม่สามารถเปิดกล้องได้";
+//       const name = err?.name || "";
+//       if (name === "NotAllowedError") msg = "คุณไม่ได้อนุญาตให้ใช้กล้อง";
+//       if (name === "NotFoundError") msg = "ไม่พบกล้องในอุปกรณ์นี้";
+//       if (name === "NotReadableError") msg = "กล้องกำลังถูกใช้งานโดยแอปอื่น";
+
+//       return Swal.fire({
+//         icon: "error",
+//         title: "เปิดกล้องไม่สำเร็จ",
+//         text: msg,
+//         confirmButtonText: "ตกลง"
+//       });
+//     }
+//   }
+
+//   async function openCameraOnce_() {
+//     await stopCamera(true, true);
+
+//     const tryOpen = async (constraints) => {
+//       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+//       activeStream = stream;
+//       videoTrack = stream.getVideoTracks()[0] || null;
+//       qrVideo.srcObject = stream;
+//       qrVideo.setAttribute("playsinline", "true");
+//       qrVideo.muted = true;
+//       await qrVideo.play();
+//       return true;
+//     };
+
+//     const wantDeviceId = cameraSelect.value || currentDeviceId || "";
+
+//     if (wantDeviceId) {
+//       try {
+//         await tryOpen({
+//           audio: false,
+//           video: {
+//             deviceId: { exact: wantDeviceId },
+//             width: { ideal: 1280 },
+//             height: { ideal: 720 },
+//             frameRate: { ideal: 24, max: 30 }
+//           }
+//         });
+//         currentDeviceId = wantDeviceId;
+//         return;
+//       } catch (_) {}
+//     }
+
+//     try {
+//       await tryOpen({
+//         audio: false,
+//         video: {
+//           facingMode: { ideal: "environment" },
+//           width: { ideal: 1280 },
+//           height: { ideal: 720 },
+//           frameRate: { ideal: 24, max: 30 }
+//         }
+//       });
+//       try {
+//         const settings = videoTrack?.getSettings?.() || {};
+//         if (settings.deviceId) currentDeviceId = settings.deviceId;
+//       } catch (_) {}
+//       return;
+//     } catch (_) {}
+
+//     await tryOpen({ video: true, audio: false });
+//   }
+
+//   async function restartWithDevice_(deviceId) {
+//     currentDeviceId = deviceId || currentDeviceId || "";
+//     try {
+//       setCameraStatus("กำลังสลับกล้อง...", "loading");
+//       await openCameraOnce_();
+//       cameraStarted = true;
+//       setCameraStatus("กล้องพร้อมสแกน", "live");
+//       bumpIdle_();
+//       startDecode_();
+//     } catch (err) {
+//       console.error(err);
+//       playErrorSound();
+//       cameraStarted = false;
+//       setCameraStatus("สลับกล้องไม่สำเร็จ", "error");
+
+//       Swal.fire({
+//         icon: "error",
+//         title: "สลับกล้องไม่สำเร็จ",
+//         text: "ลองปิดกล้องแล้วเปิดใหม่",
+//         confirmButtonText: "ตกลง"
+//       });
+//     }
+//   }
+
+//   async function stopCamera(fromIdle, silent = false) {
+//     apiBusy = false;
+//     scanning = false;
+//     cameraStarted = false;
+
+//     if (idleTimer) {
+//       clearTimeout(idleTimer);
+//       idleTimer = null;
+//     }
+
+//     if (detectorTimer) {
+//       clearTimeout(detectorTimer);
+//       detectorTimer = null;
+//     }
+
+//     try { zxingReader.reset(); } catch (_) {}
+
+//     if (activeStream) {
+//       try { activeStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+//     }
+
+//     activeStream = null;
+//     videoTrack = null;
+
+//     try { qrVideo.pause(); } catch (_) {}
+//     qrVideo.srcObject = null;
+//     setCameraStatus("กล้องปิดอยู่", "idle");
+
+//     if (fromIdle && !silent) {
+//       Swal.fire({
+//         icon: "info",
+//         title: "ปิดกล้องอัตโนมัติ",
+//         text: "ไม่มีการใช้งานเกิน 2 นาที ระบบปิดกล้องให้",
+//         timer: 1500,
+//         showConfirmButton: false
+//       });
+//     }
+//   }
+
+//   function startDecode_() {
+//     if (!cameraStarted || scanning) return;
+//     scanning = true;
+
+//     if (barcodeDetector) {
+//       detectorLoop_();
+//     } else {
+//       zxingLoop_();
+//     }
+//   }
+
+//   function stopDecode_() {
+//     scanning = false;
+//     if (detectorTimer) {
+//       clearTimeout(detectorTimer);
+//       detectorTimer = null;
+//     }
+//     try { zxingReader.reset(); } catch (_) {}
+//   }
+
+//   async function detectorLoop_() {
+//     if (!scanning || !cameraStarted || !barcodeDetector) return;
+
+//     try {
+//       const barcodes = await barcodeDetector.detect(qrVideo);
+//       if (Array.isArray(barcodes) && barcodes.length > 0) {
+//         const text = String(barcodes[0].rawValue || "").trim().toUpperCase();
+//         if (text) {
+//           const accepted = await handleDecodedText_(text);
+//           if (accepted) return;
+//         }
+//       }
+//     } catch (_) {}
+
+//     detectorTimer = setTimeout(detectorLoop_, 180);
+//   }
+
+//   function zxingLoop_() {
+//     try { zxingReader.reset(); } catch (_) {}
+
+//     zxingReader.decodeFromVideoDevice(currentDeviceId || null, qrVideo, async (result) => {
+//       if (!scanning || !cameraStarted) return;
+//       if (!result) return;
+
+//       const text = String(result.getText() || "").trim().toUpperCase();
+//       if (!text) return;
+
+//       const accepted = await handleDecodedText_(text);
+//       if (accepted) return;
+//     });
+//   }
+
+//   async function handleDecodedText_(text) {
+//     bumpIdle_();
+
+//     const now = Date.now();
+//     if (apiBusy) return false;
+//     if (now - lastScanAt < SCAN_COOLDOWN_MS) return false;
+//     if (text === lastText && (now - lastTextAt) < SAME_CODE_HOLD_MS) return false;
+
+//     lastScanAt = now;
+//     lastText = text;
+//     lastTextAt = now;
+
+//     playScanSound();
+//     apiBusy = true;
+//     stopDecode_();
+
+//     try {
+//       await runSearch(text);
+//       return true;
+//     } finally {
+//       apiBusy = false;
+//       bumpIdle_();
+//       setTimeout(() => {
+//         if (cameraStarted) startDecode_();
+//       }, AUTO_RESTART_MS);
+//     }
+//   }
+
+//   // async function runSearch(query) {
+//   //   query = String(query || "").trim().toUpperCase();
+//   //   if (!query) return;
+
+//   //   bumpIdle_();
+//   //   const reqId = ++currentRequestId;
+//   //   setCameraStatus("กำลังค้นหา...", "loading");
+
+//   //   try {
+//   //     const res = await apiSearchWithRetry_(query, MAX_API_RETRY);
+//   //     if (reqId !== currentRequestId) return;
+
+//   //     const record = res?.data?.record || {};
+
+//   //     if (res.status === "success") {
+//   //       showResult(record, res.detail || "บันทึกสำเร็จ");
+//   //       setCameraStatus("บันทึกสำเร็จ", "success");
+
+//   //       await Swal.fire({
+//   //         icon: "success",
+//   //         title: res.title || "บันทึกสำเร็จ",
+//   //         text: res.detail || "",
+//   //         timer: 2200,
+//   //         confirmButtonText: "ตกลง"
+//   //       });
+
+//   //       searchInput.value = "";
+//   //       return;
+//   //     }
+
+//   //     if (res.status === "duplicate") {
+//   //       playErrorSound();
+//   //       setCameraStatus("พบข้อมูลซ้ำ", "warning");
+//   //       if (Object.keys(record).length) showResult(record, res.detail || "ข้อมูลนี้ออกระบบแล้ว");
+
+//   //       await Swal.fire({
+//   //         icon: "warning",
+//   //         title: res.title || "บันทึกซ้ำไม่ได้",
+//   //         text: res.detail || "",
+//   //         confirmButtonText: "ตกลง"
+//   //       });
+
+//   //       searchInput.value = "";
+//   //       return;
+//   //     }
+
+//   //     if (res.status === "not_found") {
+//   //       playErrorSound();
+//   //       setCameraStatus("ไม่พบข้อมูล", "warning");
+//   //       clearResultCard_();
+
+//   //       await Swal.fire({
+//   //         icon: "warning",
+//   //         title: res.title || "ไม่พบข้อมูล",
+//   //         text: res.detail || "",
+//   //         confirmButtonText: "ตกลง"
+//   //       });
+
+//   //       searchInput.value = "";
+//   //       return;
+//   //     }
+
+//   //     playErrorSound();
+//   //     setCameraStatus("เกิดข้อผิดพลาด", "error");
+//   //     if (Object.keys(record).length) showResult(record, res.detail || "เกิดข้อผิดพลาด");
+
+//   //     await Swal.fire({
+//   //       icon: "error",
+//   //       title: res.title || "เกิดข้อผิดพลาด",
+//   //       text: res.detail || res.error || "ไม่สามารถประมวลผลได้",
+//   //       confirmButtonText: "ตกลง"
+//   //     });
+
+//   //     searchInput.value = "";
+
+//   //   } catch (err) {
+//   //     console.error(err);
+//   //     if (reqId !== currentRequestId) return;
+
+//   //     playErrorSound();
+//   //     setCameraStatus("เชื่อมต่อไม่สำเร็จ", "error");
+
+//   //     await Swal.fire({
+//   //       icon: "error",
+//   //       title: "เชื่อมต่อไม่สำเร็จ",
+//   //       text: String(err?.message || err),
+//   //       confirmButtonText: "ตกลง"
+//   //     });
+//   //   }
+//   // }
+// async function runSearch(query) {
+//   query = String(query || "").trim().toUpperCase();
+//   if (!query) return;
+
+//   bumpIdle_();
+//   const reqId = ++currentRequestId;
+//   setCameraStatus("กำลังค้นหา...", "loading");
+
+//   try {
+//     const res = await apiSearchWithRetry_(query, MAX_API_RETRY);
+//     if (reqId !== currentRequestId) return;
+
+//     const record = res?.data?.record || {};
+
+//     if (res.status === "success") {
+//       showResult(record, res.detail || "บันทึกสำเร็จ");
+//       setCameraStatus("บันทึกสำเร็จ", "success");
+
+//       await Swal.fire({
+//         icon: "success",
+//         title: res.title || "บันทึกสำเร็จ",
+//         text: res.detail || "",
+//         timer: 1200,
+//         showConfirmButton: false,
+//         allowOutsideClick: true,
+//         allowEscapeKey: true
+//       });
+
+//       searchInput.value = "";
+//       return;
+//     }
+
+//     if (res.status === "duplicate") {
+//       playErrorSound();
+//       setCameraStatus("พบข้อมูลซ้ำ", "warning");
+//       if (Object.keys(record).length) showResult(record, res.detail || "ข้อมูลนี้ออกระบบแล้ว");
+
+//       await Swal.fire({
+//         icon: "warning",
+//         title: res.title || "บันทึกซ้ำไม่ได้",
+//         text: res.detail || "",
+//         timer: 1800,
+//         showConfirmButton: false,
+//         allowOutsideClick: true,
+//         allowEscapeKey: true
+//       });
+
+//       searchInput.value = "";
+//       return;
+//     }
+
+//     if (res.status === "not_found") {
+//       playErrorSound();
+//       setCameraStatus("ไม่พบข้อมูล", "warning");
+//       clearResultCard_();
+
+//       await Swal.fire({
+//         icon: "warning",
+//         title: res.title || "ไม่พบข้อมูล",
+//         text: res.detail || "",
+//         timer: 1800,
+//         showConfirmButton: false,
+//         allowOutsideClick: true,
+//         allowEscapeKey: true
+//       });
+
+//       searchInput.value = "";
+//       return;
+//     }
+
+//     playErrorSound();
+//     setCameraStatus("เกิดข้อผิดพลาด", "error");
+//     if (Object.keys(record).length) showResult(record, res.detail || "เกิดข้อผิดพลาด");
+
+//     await Swal.fire({
+//       icon: "error",
+//       title: res.title || "เกิดข้อผิดพลาด",
+//       text: res.detail || res.error || "ไม่สามารถประมวลผลได้",
+//       timer: 2000,
+//       showConfirmButton: false,
+//       allowOutsideClick: true,
+//       allowEscapeKey: true
+//     });
+
+//     searchInput.value = "";
+
+//   } catch (err) {
+//     console.error(err);
+//     if (reqId !== currentRequestId) return;
+
+//     playErrorSound();
+//     setCameraStatus("เชื่อมต่อไม่สำเร็จ", "error");
+
+//     await Swal.fire({
+//       icon: "error",
+//       title: "เชื่อมต่อไม่สำเร็จ",
+//       text: String(err?.message || err),
+//       timer: 2000,
+//       showConfirmButton: false,
+//       allowOutsideClick: true,
+//       allowEscapeKey: true
+//     });
+//   }
+// }
+//   async function apiSearch_(query) {
+//     const controller = new AbortController();
+//     const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+//     try {
+//       const url = `${API_BASE}/api/search?query=${encodeURIComponent(query)}&_ts=${Date.now()}`;
+//       const res = await fetch(url, {
+//         method: "GET",
+//         cache: "no-store",
+//         signal: controller.signal
+//       });
+
+//       const data = await res.json();
+//       return data;
+//     } finally {
+//       clearTimeout(timer);
+//     }
+//   }
+
+//   async function apiSearchWithRetry_(query, retries = 1) {
+//     try {
+//       return await apiSearch_(query);
+//     } catch (err) {
+//       if (retries <= 0) throw err;
+//       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+//       return apiSearchWithRetry_(query, retries - 1);
+//     }
+//   }
+
+//   document.addEventListener("visibilitychange", () => {
+//     if (document.hidden && cameraStarted) {
+//       stopCamera(true, true);
+//     }
+//   });
+
+//   setCameraStatus("กล้องปิดอยู่", "idle");
+// });
 const API_BASE = "https://visitor-entry-api.somchaibutphon.workers.dev";
 
-const SCAN_COOLDOWN_MS = 900;
+const SCAN_COOLDOWN_SUCCESS_MS = 350;
+const SCAN_COOLDOWN_WARNING_MS = 900;
 const SAME_CODE_HOLD_MS = 1800;
-const API_TIMEOUT_MS = 20000;
-const AUTO_RESTART_MS = 900;
-const CAMERA_IDLE_TIMEOUT_MS = 120000;
-const RETRY_DELAY_MS = 900;
+
+const API_TIMEOUT_MS = 15000;
+const RETRY_DELAY_MS = 500;
 const MAX_API_RETRY = 1;
 
-document.addEventListener('DOMContentLoaded', () => {
+const DETECTOR_INTERVAL_MS = 120;
+const ZXING_RESTART_DELAY_MS = 300;
+const CAMERA_IDLE_TIMEOUT_MS = 180000;
+
+document.addEventListener("DOMContentLoaded", () => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
-  const searchInput   = document.getElementById('searchInput');
-  const searchBtn     = document.getElementById('searchBtn');
-  const qrVideo       = document.getElementById('qrVideo');
-  const cameraSelect  = document.getElementById('cameraSelect');
-  const startButton   = document.getElementById('startCamera');
-  const stopButton    = document.getElementById('stopCamera');
-  const cameraStatus  = document.getElementById('cameraStatus');
+  const searchInput   = document.getElementById("searchInput");
+  const searchBtn     = document.getElementById("searchBtn");
+  const qrVideo       = document.getElementById("qrVideo");
+  const cameraSelect  = document.getElementById("cameraSelect");
+  const startButton   = document.getElementById("startCamera");
+  const stopButton    = document.getElementById("stopCamera");
+  const cameraStatus  = document.getElementById("cameraStatus");
 
-  const resultCard    = document.getElementById('scanResult');
-  const resultGrid    = document.getElementById('resultGrid');
-  const resultHint    = document.getElementById('resultHint');
-  const clearResult   = document.getElementById('clearResult');
+  const resultCard    = document.getElementById("scanResult");
+  const resultGrid    = document.getElementById("resultGrid");
+  const resultHint    = document.getElementById("resultHint");
+  const clearResult   = document.getElementById("clearResult");
 
-  const zxingReader = new ZXing.BrowserQRCodeReader();
+  const zxingReader = new ZXing.BrowserQRCodeReader(undefined, {
+    delayBetweenScanAttempts: 60,
+    delayBetweenScanSuccess: 60
+  });
+
+  const Toast = Swal.mixin({
+    toast: true,
+    position: "top",
+    showConfirmButton: false,
+    timerProgressBar: false,
+    allowOutsideClick: true,
+    allowEscapeKey: true
+  });
 
   let currentDeviceId = "";
   let cameraStarted = false;
-  let starting = false;
-  let scanning = false;
-  let apiBusy = false;
+  let cameraStarting = false;
+  let decodeRunning = false;
+  let activeStream = null;
+  let videoTrack = null;
+
+  let barcodeDetector = null;
+  let detectorTimer = null;
+  let idleTimer = null;
+
   let lastScanAt = 0;
   let lastText = "";
   let lastTextAt = 0;
-  let activeStream = null;
-  let idleTimer = null;
+
   let currentRequestId = 0;
-  let videoTrack = null;
-  let barcodeDetector = null;
-  let detectorTimer = null;
+  let currentFetchController = null;
+  let requestInFlight = false;
+
   let audioCtx = null;
+  let wakeLock = null;
 
   initDetector_();
+  setCameraStatus("กล้องปิดอยู่", "idle");
+
+  document.addEventListener("click", unlockAudio_, { passive: true });
+  document.addEventListener("touchstart", unlockAudio_, { passive: true });
+  document.addEventListener("pointerdown", unlockAudio_, { passive: true });
+
+  clearResult.addEventListener("click", clearResultCard_);
+
+  searchInput.addEventListener("input", () => {
+    searchInput.value = normalizeCode_(searchInput.value);
+    bumpIdle_();
+  });
+
+  searchInput.addEventListener("keyup", (e) => {
+    bumpIdle_();
+    if (e.key === "Enter") runSearch(searchInput.value, { source: "manual" });
+  });
+
+  searchBtn.addEventListener("click", () => {
+    bumpIdle_();
+    runSearch(searchInput.value, { source: "manual" });
+  });
+
+  startButton.addEventListener("click", async () => {
+    if (cameraStarting) return;
+    cameraStarting = true;
+    try {
+      await unlockAudio_();
+      await startFlow_();
+    } finally {
+      cameraStarting = false;
+    }
+  });
+
+  stopButton.addEventListener("click", () => stopCamera(false));
+
+  cameraSelect.addEventListener("change", async () => {
+    if (!cameraStarted) return;
+    bumpIdle_();
+    await restartWithDevice_(cameraSelect.value);
+  });
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+      if (cameraStarted) stopCamera(true, true);
+      releaseWakeLock_();
+    } else if (cameraStarted) {
+      acquireWakeLock_();
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    abortActiveRequest_();
+    stopCamera(true, true);
+  });
 
   function initDetector_() {
     try {
@@ -3414,6 +4260,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (_) {
       barcodeDetector = null;
     }
+  }
+
+  function normalizeCode_(value) {
+    return String(value || "").replace(/\u00A0/g, " ").trim().toUpperCase();
+  }
+
+  function isMobile_() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  function isInAppBrowser_() {
+    const ua = navigator.userAgent || "";
+    return /Line|FBAN|FBAV|Instagram/i.test(ua);
   }
 
   function setCameraStatus(text, type = "idle") {
@@ -3471,17 +4330,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function playScanSound() {
-    playTone_(1400, 120, "sine", 0.25);
+    playTone_(1450, 90, "sine", 0.22);
   }
 
   function playErrorSound() {
-    playTone_(260, 160, "square", 0.22);
-    setTimeout(() => playTone_(220, 170, "square", 0.22), 180);
+    playTone_(260, 120, "square", 0.22);
+    setTimeout(() => playTone_(220, 120, "square", 0.22), 130);
   }
 
-  document.addEventListener("click", unlockAudio_, { passive: true });
-  document.addEventListener("touchstart", unlockAudio_, { passive: true });
-  document.addEventListener("pointerdown", unlockAudio_, { passive: true });
+  async function acquireWakeLock_() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      if (wakeLock) return;
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener?.("release", () => {
+        wakeLock = null;
+      });
+    } catch (_) {}
+  }
+
+  function releaseWakeLock_() {
+    try { wakeLock?.release?.(); } catch (_) {}
+    wakeLock = null;
+  }
 
   function bumpIdle_() {
     if (!cameraStarted) return;
@@ -3503,18 +4374,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const used = new Set();
     const keys = [];
 
-    preferredOrder.forEach(k => {
+    preferredOrder.forEach((k) => {
       if (record[k] != null && record[k] !== "") {
         keys.push(k);
         used.add(k);
       }
     });
 
-    Object.keys(record).forEach(k => {
+    Object.keys(record).forEach((k) => {
       if (!used.has(k) && record[k] != null && record[k] !== "") keys.push(k);
     });
 
-    keys.forEach(key => {
+    keys.forEach((key) => {
       const k = document.createElement("div");
       k.className = "k";
       k.textContent = key;
@@ -3540,58 +4411,13 @@ document.addEventListener('DOMContentLoaded', () => {
       resultGrid.appendChild(v);
     });
 
-    setTimeout(() => resultCard.classList.remove("flash"), 250);
+    setTimeout(() => resultCard.classList.remove("flash"), 220);
   }
 
   function clearResultCard_() {
     resultGrid.innerHTML = "";
     resultHint.textContent = "พร้อมสแกน...";
     resultCard.classList.add("is-hidden");
-  }
-
-  clearResult.addEventListener("click", clearResultCard_);
-
-  searchInput.addEventListener("input", () => {
-    searchInput.value = String(searchInput.value || "").toUpperCase().trim();
-    bumpIdle_();
-  });
-
-  searchBtn.addEventListener("click", () => {
-    bumpIdle_();
-    runSearch(searchInput.value);
-  });
-
-  searchInput.addEventListener("keyup", (e) => {
-    bumpIdle_();
-    if (e.key === "Enter") runSearch(searchInput.value);
-  });
-
-  startButton.addEventListener("click", async () => {
-    if (starting) return;
-    starting = true;
-    try {
-      await unlockAudio_();
-      await startFlow_();
-    } finally {
-      starting = false;
-    }
-  });
-
-  stopButton.addEventListener("click", () => stopCamera(false));
-
-  cameraSelect.addEventListener("change", async () => {
-    if (!cameraStarted) return;
-    bumpIdle_();
-    await restartWithDevice_(cameraSelect.value);
-  });
-
-  function isMobile_() {
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  }
-
-  function isInAppBrowser_() {
-    const ua = navigator.userAgent || "";
-    return /Line|FBAN|FBAV|Instagram/i.test(ua);
   }
 
   async function queryCameraPermission_() {
@@ -3606,13 +4432,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function listVideoDevices_() {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices.filter(d => d.kind === "videoinput");
+    return devices.filter((d) => d.kind === "videoinput");
   }
 
   function pickDefaultDevice_(devices) {
     if (!devices?.length) return "";
     if (isMobile_()) {
-      const back = devices.find(d => /back|rear|environment/i.test(d.label || ""));
+      const back = devices.find((d) => /back|rear|environment/i.test(d.label || ""));
       return back?.deviceId || devices[0].deviceId || "";
     }
     return devices[0].deviceId || "";
@@ -3639,30 +4465,26 @@ document.addEventListener('DOMContentLoaded', () => {
   async function startFlow_() {
     if (!navigator.mediaDevices?.getUserMedia) {
       playErrorSound();
-      return Swal.fire({
+      await Toast.fire({
         icon: "error",
-        title: "ไม่รองรับกล้อง",
-        text: "เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง",
-        confirmButtonText: "ตกลง"
+        title: "เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง",
+        timer: 1800
       });
+      return;
     }
 
     if (isInAppBrowser_()) {
-      await Swal.fire({
+      await Toast.fire({
         icon: "info",
-        title: "แนะนำให้เปิดด้วย Chrome / Safari",
-        html: `<div style="font-size:14px;text-align:left">
-          บางเครื่องเมื่อเปิดผ่าน LINE / Facebook / Instagram จะเปิดกล้องไม่เสถียร<br>
-          แนะนำให้เปิดผ่าน Chrome, Safari หรือ Add to Home Screen
-        </div>`,
-        confirmButtonText: "เข้าใจแล้ว"
+        title: "แนะนำให้เปิดผ่าน Chrome / Safari",
+        timer: 1800
       });
     }
 
     const p = await queryCameraPermission_();
     if (p === "denied") {
       playErrorSound();
-      return Swal.fire({
+      await Swal.fire({
         icon: "warning",
         title: "ไม่ได้รับอนุญาตใช้กล้อง",
         html: `<div style="text-align:left;font-size:14px">
@@ -3671,6 +4493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmButtonText: "ตกลง",
         allowOutsideClick: false
       });
+      return;
     }
 
     try {
@@ -3679,6 +4502,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await refreshCameraSelect_();
       cameraStarted = true;
       setCameraStatus("กล้องพร้อมสแกน", "live");
+      await acquireWakeLock_();
       bumpIdle_();
       startDecode_();
     } catch (err) {
@@ -3692,7 +4516,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (name === "NotFoundError") msg = "ไม่พบกล้องในอุปกรณ์นี้";
       if (name === "NotReadableError") msg = "กล้องกำลังถูกใช้งานโดยแอปอื่น";
 
-      return Swal.fire({
+      await Swal.fire({
         icon: "error",
         title: "เปิดกล้องไม่สำเร็จ",
         text: msg,
@@ -3710,6 +4534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       videoTrack = stream.getVideoTracks()[0] || null;
       qrVideo.srcObject = stream;
       qrVideo.setAttribute("playsinline", "true");
+      qrVideo.setAttribute("webkit-playsinline", "true");
       qrVideo.muted = true;
       await qrVideo.play();
       return true;
@@ -3743,10 +4568,8 @@ document.addEventListener('DOMContentLoaded', () => {
           frameRate: { ideal: 24, max: 30 }
         }
       });
-      try {
-        const settings = videoTrack?.getSettings?.() || {};
-        if (settings.deviceId) currentDeviceId = settings.deviceId;
-      } catch (_) {}
+      const settings = videoTrack?.getSettings?.() || {};
+      if (settings.deviceId) currentDeviceId = settings.deviceId;
       return;
     } catch (_) {}
 
@@ -3768,19 +4591,17 @@ document.addEventListener('DOMContentLoaded', () => {
       cameraStarted = false;
       setCameraStatus("สลับกล้องไม่สำเร็จ", "error");
 
-      Swal.fire({
+      await Toast.fire({
         icon: "error",
         title: "สลับกล้องไม่สำเร็จ",
-        text: "ลองปิดกล้องแล้วเปิดใหม่",
-        confirmButtonText: "ตกลง"
+        timer: 1600
       });
     }
   }
 
   async function stopCamera(fromIdle, silent = false) {
-    apiBusy = false;
-    scanning = false;
-    cameraStarted = false;
+    requestInFlight = false;
+    decodeRunning = false;
 
     if (idleTimer) {
       clearTimeout(idleTimer);
@@ -3792,33 +4613,36 @@ document.addEventListener('DOMContentLoaded', () => {
       detectorTimer = null;
     }
 
+    abortActiveRequest_();
+
     try { zxingReader.reset(); } catch (_) {}
 
     if (activeStream) {
-      try { activeStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      try { activeStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     }
 
     activeStream = null;
     videoTrack = null;
+    cameraStarted = false;
 
     try { qrVideo.pause(); } catch (_) {}
     qrVideo.srcObject = null;
+
+    releaseWakeLock_();
     setCameraStatus("กล้องปิดอยู่", "idle");
 
     if (fromIdle && !silent) {
-      Swal.fire({
+      await Toast.fire({
         icon: "info",
         title: "ปิดกล้องอัตโนมัติ",
-        text: "ไม่มีการใช้งานเกิน 2 นาที ระบบปิดกล้องให้",
-        timer: 1500,
-        showConfirmButton: false
+        timer: 1400
       });
     }
   }
 
   function startDecode_() {
-    if (!cameraStarted || scanning) return;
-    scanning = true;
+    if (!cameraStarted || decodeRunning) return;
+    decodeRunning = true;
 
     if (barcodeDetector) {
       detectorLoop_();
@@ -3828,7 +4652,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function stopDecode_() {
-    scanning = false;
+    decodeRunning = false;
     if (detectorTimer) {
       clearTimeout(detectorTimer);
       detectorTimer = null;
@@ -3837,30 +4661,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function detectorLoop_() {
-    if (!scanning || !cameraStarted || !barcodeDetector) return;
+    if (!decodeRunning || !cameraStarted || !barcodeDetector) return;
 
     try {
-      const barcodes = await barcodeDetector.detect(qrVideo);
-      if (Array.isArray(barcodes) && barcodes.length > 0) {
-        const text = String(barcodes[0].rawValue || "").trim().toUpperCase();
-        if (text) {
-          const accepted = await handleDecodedText_(text);
-          if (accepted) return;
+      if (qrVideo.readyState >= 2) {
+        const barcodes = await barcodeDetector.detect(qrVideo);
+        if (Array.isArray(barcodes) && barcodes.length > 0) {
+          const text = normalizeCode_(barcodes[0].rawValue || "");
+          if (text) {
+            const accepted = await handleDecodedText_(text);
+            if (accepted) return;
+          }
         }
       }
     } catch (_) {}
 
-    detectorTimer = setTimeout(detectorLoop_, 180);
+    detectorTimer = setTimeout(detectorLoop_, DETECTOR_INTERVAL_MS);
   }
 
   function zxingLoop_() {
     try { zxingReader.reset(); } catch (_) {}
 
     zxingReader.decodeFromVideoDevice(currentDeviceId || null, qrVideo, async (result) => {
-      if (!scanning || !cameraStarted) return;
+      if (!decodeRunning || !cameraStarted) return;
       if (!result) return;
 
-      const text = String(result.getText() || "").trim().toUpperCase();
+      const text = normalizeCode_(result.getText() || "");
       if (!text) return;
 
       const accepted = await handleDecodedText_(text);
@@ -3868,230 +4694,161 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function canAcceptCode_(text) {
+    const now = Date.now();
+
+    if (requestInFlight) return false;
+    if (now - lastScanAt < SCAN_COOLDOWN_SUCCESS_MS) return false;
+    if (text === lastText && (now - lastTextAt) < SAME_CODE_HOLD_MS) return false;
+
+    return true;
+  }
+
   async function handleDecodedText_(text) {
     bumpIdle_();
 
-    const now = Date.now();
-    if (apiBusy) return false;
-    if (now - lastScanAt < SCAN_COOLDOWN_MS) return false;
-    if (text === lastText && (now - lastTextAt) < SAME_CODE_HOLD_MS) return false;
+    if (!canAcceptCode_(text)) return false;
 
-    lastScanAt = now;
+    lastScanAt = Date.now();
     lastText = text;
-    lastTextAt = now;
+    lastTextAt = Date.now();
 
     playScanSound();
-    apiBusy = true;
     stopDecode_();
 
     try {
-      await runSearch(text);
+      await runSearch(text, { source: "camera" });
       return true;
     } finally {
-      apiBusy = false;
-      bumpIdle_();
       setTimeout(() => {
-        if (cameraStarted) startDecode_();
-      }, AUTO_RESTART_MS);
+        if (cameraStarted && !decodeRunning) startDecode_();
+      }, ZXING_RESTART_DELAY_MS);
     }
   }
 
-  // async function runSearch(query) {
-  //   query = String(query || "").trim().toUpperCase();
-  //   if (!query) return;
-
-  //   bumpIdle_();
-  //   const reqId = ++currentRequestId;
-  //   setCameraStatus("กำลังค้นหา...", "loading");
-
-  //   try {
-  //     const res = await apiSearchWithRetry_(query, MAX_API_RETRY);
-  //     if (reqId !== currentRequestId) return;
-
-  //     const record = res?.data?.record || {};
-
-  //     if (res.status === "success") {
-  //       showResult(record, res.detail || "บันทึกสำเร็จ");
-  //       setCameraStatus("บันทึกสำเร็จ", "success");
-
-  //       await Swal.fire({
-  //         icon: "success",
-  //         title: res.title || "บันทึกสำเร็จ",
-  //         text: res.detail || "",
-  //         timer: 2200,
-  //         confirmButtonText: "ตกลง"
-  //       });
-
-  //       searchInput.value = "";
-  //       return;
-  //     }
-
-  //     if (res.status === "duplicate") {
-  //       playErrorSound();
-  //       setCameraStatus("พบข้อมูลซ้ำ", "warning");
-  //       if (Object.keys(record).length) showResult(record, res.detail || "ข้อมูลนี้ออกระบบแล้ว");
-
-  //       await Swal.fire({
-  //         icon: "warning",
-  //         title: res.title || "บันทึกซ้ำไม่ได้",
-  //         text: res.detail || "",
-  //         confirmButtonText: "ตกลง"
-  //       });
-
-  //       searchInput.value = "";
-  //       return;
-  //     }
-
-  //     if (res.status === "not_found") {
-  //       playErrorSound();
-  //       setCameraStatus("ไม่พบข้อมูล", "warning");
-  //       clearResultCard_();
-
-  //       await Swal.fire({
-  //         icon: "warning",
-  //         title: res.title || "ไม่พบข้อมูล",
-  //         text: res.detail || "",
-  //         confirmButtonText: "ตกลง"
-  //       });
-
-  //       searchInput.value = "";
-  //       return;
-  //     }
-
-  //     playErrorSound();
-  //     setCameraStatus("เกิดข้อผิดพลาด", "error");
-  //     if (Object.keys(record).length) showResult(record, res.detail || "เกิดข้อผิดพลาด");
-
-  //     await Swal.fire({
-  //       icon: "error",
-  //       title: res.title || "เกิดข้อผิดพลาด",
-  //       text: res.detail || res.error || "ไม่สามารถประมวลผลได้",
-  //       confirmButtonText: "ตกลง"
-  //     });
-
-  //     searchInput.value = "";
-
-  //   } catch (err) {
-  //     console.error(err);
-  //     if (reqId !== currentRequestId) return;
-
-  //     playErrorSound();
-  //     setCameraStatus("เชื่อมต่อไม่สำเร็จ", "error");
-
-  //     await Swal.fire({
-  //       icon: "error",
-  //       title: "เชื่อมต่อไม่สำเร็จ",
-  //       text: String(err?.message || err),
-  //       confirmButtonText: "ตกลง"
-  //     });
-  //   }
-  // }
-async function runSearch(query) {
-  query = String(query || "").trim().toUpperCase();
-  if (!query) return;
-
-  bumpIdle_();
-  const reqId = ++currentRequestId;
-  setCameraStatus("กำลังค้นหา...", "loading");
-
-  try {
-    const res = await apiSearchWithRetry_(query, MAX_API_RETRY);
-    if (reqId !== currentRequestId) return;
-
-    const record = res?.data?.record || {};
-
-    if (res.status === "success") {
-      showResult(record, res.detail || "บันทึกสำเร็จ");
-      setCameraStatus("บันทึกสำเร็จ", "success");
-
-      await Swal.fire({
-        icon: "success",
-        title: res.title || "บันทึกสำเร็จ",
-        text: res.detail || "",
-        timer: 1200,
-        showConfirmButton: false,
-        allowOutsideClick: true,
-        allowEscapeKey: true
-      });
-
-      searchInput.value = "";
-      return;
-    }
-
-    if (res.status === "duplicate") {
-      playErrorSound();
-      setCameraStatus("พบข้อมูลซ้ำ", "warning");
-      if (Object.keys(record).length) showResult(record, res.detail || "ข้อมูลนี้ออกระบบแล้ว");
-
-      await Swal.fire({
-        icon: "warning",
-        title: res.title || "บันทึกซ้ำไม่ได้",
-        text: res.detail || "",
-        timer: 1800,
-        showConfirmButton: false,
-        allowOutsideClick: true,
-        allowEscapeKey: true
-      });
-
-      searchInput.value = "";
-      return;
-    }
-
-    if (res.status === "not_found") {
-      playErrorSound();
-      setCameraStatus("ไม่พบข้อมูล", "warning");
-      clearResultCard_();
-
-      await Swal.fire({
-        icon: "warning",
-        title: res.title || "ไม่พบข้อมูล",
-        text: res.detail || "",
-        timer: 1800,
-        showConfirmButton: false,
-        allowOutsideClick: true,
-        allowEscapeKey: true
-      });
-
-      searchInput.value = "";
-      return;
-    }
-
-    playErrorSound();
-    setCameraStatus("เกิดข้อผิดพลาด", "error");
-    if (Object.keys(record).length) showResult(record, res.detail || "เกิดข้อผิดพลาด");
-
-    await Swal.fire({
-      icon: "error",
-      title: res.title || "เกิดข้อผิดพลาด",
-      text: res.detail || res.error || "ไม่สามารถประมวลผลได้",
-      timer: 2000,
-      showConfirmButton: false,
-      allowOutsideClick: true,
-      allowEscapeKey: true
-    });
-
-    searchInput.value = "";
-
-  } catch (err) {
-    console.error(err);
-    if (reqId !== currentRequestId) return;
-
-    playErrorSound();
-    setCameraStatus("เชื่อมต่อไม่สำเร็จ", "error");
-
-    await Swal.fire({
-      icon: "error",
-      title: "เชื่อมต่อไม่สำเร็จ",
-      text: String(err?.message || err),
-      timer: 2000,
-      showConfirmButton: false,
-      allowOutsideClick: true,
-      allowEscapeKey: true
-    });
+  function nextRequestId_() {
+    currentRequestId += 1;
+    return currentRequestId;
   }
-}
+
+  function abortActiveRequest_() {
+    try { currentFetchController?.abort?.(); } catch (_) {}
+    currentFetchController = null;
+  }
+
+  async function runSearch(query, options = {}) {
+    query = normalizeCode_(query);
+    if (!query) return;
+
+    bumpIdle_();
+    const reqId = nextRequestId_();
+    requestInFlight = true;
+    setCameraStatus("กำลังค้นหา...", "loading");
+
+    try {
+      const res = await apiSearchWithRetry_(query, MAX_API_RETRY);
+      if (reqId !== currentRequestId) return;
+
+      const record = res?.data?.record || {};
+
+      if (res.status === "success") {
+        showResult(record, res.detail || "บันทึกสำเร็จ");
+        setCameraStatus("บันทึกสำเร็จ", "success");
+
+        await Toast.fire({
+          icon: "success",
+          title: res.title || "บันทึกสำเร็จ",
+          timer: 1100
+        });
+
+        searchInput.value = "";
+        lastScanAt = Date.now();
+        return;
+      }
+
+      if (res.status === "duplicate") {
+        playErrorSound();
+        setCameraStatus("พบข้อมูลซ้ำ", "warning");
+        if (Object.keys(record).length) {
+          showResult(record, res.detail || "ข้อมูลนี้ออกระบบแล้ว");
+        }
+
+        await Toast.fire({
+          icon: "warning",
+          title: res.title || "บันทึกซ้ำไม่ได้",
+          text: res.detail || "",
+          timer: 1600
+        });
+
+        searchInput.value = "";
+        lastScanAt = Date.now() - (SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS);
+        return;
+      }
+
+      if (res.status === "not_found") {
+        playErrorSound();
+        setCameraStatus("ไม่พบข้อมูล", "warning");
+        clearResultCard_();
+
+        await Toast.fire({
+          icon: "warning",
+          title: res.title || "ไม่พบข้อมูล",
+          text: res.detail || "",
+          timer: 1600
+        });
+
+        searchInput.value = "";
+        lastScanAt = Date.now() - (SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS);
+        return;
+      }
+
+      playErrorSound();
+      setCameraStatus("เกิดข้อผิดพลาด", "error");
+      if (Object.keys(record).length) {
+        showResult(record, res.detail || "เกิดข้อผิดพลาด");
+      }
+
+      await Toast.fire({
+        icon: "error",
+        title: res.title || "เกิดข้อผิดพลาด",
+        text: res.detail || res.error || "ไม่สามารถประมวลผลได้",
+        timer: 1800
+      });
+
+      searchInput.value = "";
+      lastScanAt = Date.now() - (SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS);
+
+    } catch (err) {
+      console.error(err);
+      if (reqId !== currentRequestId) return;
+
+      playErrorSound();
+      setCameraStatus("เชื่อมต่อไม่สำเร็จ", "error");
+
+      await Toast.fire({
+        icon: "error",
+        title: "เชื่อมต่อไม่สำเร็จ",
+        text: String(err?.message || err),
+        timer: 1800
+      });
+
+      lastScanAt = Date.now() - (SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS);
+    } finally {
+      requestInFlight = false;
+      bumpIdle_();
+      if (options.source === "manual") {
+        searchInput.focus();
+        searchInput.select?.();
+      }
+    }
+  }
+
   async function apiSearch_(query) {
+    abortActiveRequest_();
+
     const controller = new AbortController();
+    currentFetchController = controller;
+
     const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
     try {
@@ -4099,13 +4856,30 @@ async function runSearch(query) {
       const res = await fetch(url, {
         method: "GET",
         cache: "no-store",
-        signal: controller.signal
+        signal: controller.signal,
+        headers: {
+          "Accept": "application/json"
+        }
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        throw new Error("API ส่งข้อมูลไม่ถูกต้อง");
+      }
+
       return data;
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        throw new Error("หมดเวลารอการเชื่อมต่อ");
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
+      if (currentFetchController === controller) {
+        currentFetchController = null;
+      }
     }
   }
 
@@ -4114,18 +4888,10 @@ async function runSearch(query) {
       return await apiSearch_(query);
     } catch (err) {
       if (retries <= 0) throw err;
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
       return apiSearchWithRetry_(query, retries - 1);
     }
   }
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden && cameraStarted) {
-      stopCamera(true, true);
-    }
-  });
-
-  setCameraStatus("กล้องปิดอยู่", "idle");
 });
 
 
