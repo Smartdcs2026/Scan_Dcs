@@ -4333,8 +4333,7 @@ document.addEventListener("DOMContentLoaded", () => {
     playTone_(1450, 90, "sine", 0.22);
   }
   function playSuccessSound() {
-  playTone_(1200, 90, "sine", 0.24);
-  setTimeout(() => playTone_(1600, 120, "sine", 0.22), 110);
+  playTone_(1500, 120, "sine", 0.24);
 }
   function playErrorSound() {
     playTone_(260, 120, "square", 0.22);
@@ -4897,6 +4896,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 });
+
 
 
 
