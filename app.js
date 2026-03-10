@@ -4332,7 +4332,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function playScanSound() {
     playTone_(1450, 90, "sine", 0.22);
   }
-
+  function playSuccessSound() {
+  playTone_(1200, 90, "sine", 0.24);
+  setTimeout(() => playTone_(1600, 120, "sine", 0.22), 110);
+}
   function playErrorSound() {
     playTone_(260, 120, "square", 0.22);
     setTimeout(() => playTone_(220, 120, "square", 0.22), 130);
@@ -4752,19 +4755,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const record = res?.data?.record || {};
 
       if (res.status === "success") {
-        showResult(record, res.detail || "บันทึกสำเร็จ");
-        setCameraStatus("บันทึกสำเร็จ", "success");
+  showResult(record, res.detail || "บันทึกสำเร็จ");
+  setCameraStatus("บันทึกสำเร็จ", "success");
+  playSuccessSound();
 
-        await Toast.fire({
-          icon: "success",
-          title: res.title || "บันทึกสำเร็จ",
-          timer: 1100
-        });
+  await Toast.fire({
+    icon: "success",
+    title: res.title || "บันทึกสำเร็จ",
+    timer: 1100
+  });
 
-        searchInput.value = "";
-        lastScanAt = Date.now();
-        return;
-      }
+  searchInput.value = "";
+  lastScanAt = Date.now();
+  return;
+}
 
       if (res.status === "duplicate") {
         playErrorSound();
@@ -4893,5 +4897,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 });
+
 
 
