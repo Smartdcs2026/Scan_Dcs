@@ -5,6 +5,7 @@ const SCAN_COOLDOWN_WARNING_MS = 900;
 const SAME_CODE_HOLD_MS = 1800;
 
 const API_TIMEOUT_MS = 30000;
+const RESULT_AUTO_CLOSE_MS = 3000;
 
 const DETECTOR_INTERVAL_MS = 120;
 const ZXING_RESTART_DELAY_MS = 300;
@@ -27,7 +28,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultCard = document.getElementById("scanResult");
   const resultGrid = document.getElementById("resultGrid");
   const resultHint = document.getElementById("resultHint");
-  const clearResult = document.getElementById("clearResult");
 
   const zxingReader = new ZXing.BrowserQRCodeReader(undefined, {
     delayBetweenScanAttempts: 60,
@@ -62,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentFetchController = null;
   let requestInFlight = false;
   let resultVisible = false;
+  let resultAutoCloseTimer = null;
 
   let audioCtx = null;
   let wakeLock = null;
@@ -73,8 +74,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", unlockAudio_, { passive: true });
   document.addEventListener("touchstart", unlockAudio_, { passive: true });
   document.addEventListener("pointerdown", unlockAudio_, { passive: true });
-
-  clearResult.addEventListener("click", resumeAfterResult_);
 
   searchInput.addEventListener("input", () => {
     searchInput.value = normalizeCode_(searchInput.value);
@@ -232,7 +231,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function playSuccessSound_() {
-    playTone_(1500, 120, "sine", 0.24);
+    playTone_(1350, 90, "sine", 0.24);
+    setTimeout(() => playTone_(1750, 130, "sine", 0.28), 95);
+  }
+
+  function playDuplicateSound_() {
+    playTone_(430, 180, "square", 0.34);
+    setTimeout(() => playTone_(430, 180, "square", 0.34), 220);
+    setTimeout(() => playTone_(290, 300, "square", 0.38), 440);
+
+    try {
+      navigator.vibrate?.([180, 90, 180, 90, 300]);
+    } catch (_) {}
   }
 
   function playErrorSound_() {
@@ -268,7 +278,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }, CAMERA_IDLE_TIMEOUT_MS);
   }
 
+  function clearResultAutoClose_() {
+    if (!resultAutoCloseTimer) return;
+
+    clearTimeout(resultAutoCloseTimer);
+    resultAutoCloseTimer = null;
+  }
+
+  function scheduleResultAutoClose_() {
+    clearResultAutoClose_();
+
+    resultAutoCloseTimer = setTimeout(() => {
+      resultAutoCloseTimer = null;
+      resumeAfterResult_();
+    }, RESULT_AUTO_CLOSE_MS);
+  }
+
   function showResult_(record = {}, hint = "") {
+    clearResultAutoClose_();
     resultGrid.innerHTML = "";
     resultHint.textContent = hint || "บันทึกสำเร็จ";
 
@@ -341,7 +368,6 @@ document.addEventListener("DOMContentLoaded", () => {
     resultVisible = true;
     stopDecode_();
 
-    clearResult.textContent = cameraStarted ? "สแกนต่อ" : "ปิดผลลัพธ์";
     resultCard.classList.remove("is-hidden");
     resultCard.classList.remove("flash");
     videoWrap.classList.add("has-result");
@@ -358,9 +384,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => {
       resultCard.classList.remove("flash");
     }, 240);
+
+    scheduleResultAutoClose_();
   }
 
   function hideResult_() {
+    clearResultAutoClose_();
     resultVisible = false;
     resultGrid.innerHTML = "";
     resultHint.textContent = "พร้อมสแกน...";
@@ -370,6 +399,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function resumeAfterResult_() {
+    if (!resultVisible) return;
+
     hideResult_();
     searchInput.value = "";
 
@@ -785,6 +816,16 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    if (query.length > 120) {
+      await Toast.fire({
+        icon: "warning",
+        title: "รหัสยาวเกินกำหนด",
+        text: "กรุณาตรวจสอบ Auto ID อีกครั้ง",
+        timer: 1600
+      });
+      return;
+    }
+
     if (requestInFlight) return;
 
     hideResult_();
@@ -820,7 +861,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (status === "duplicate") {
-        playErrorSound_();
+        playDuplicateSound_();
         setCameraStatus_("พบข้อมูลซ้ำ", "warning");
 
         if (Object.keys(record).length) {
