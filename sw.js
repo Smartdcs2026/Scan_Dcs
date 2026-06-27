@@ -1,11 +1,14 @@
-const CACHE_NAME = "scan-dcs-v5";
+const CACHE_NAME = "scan-dcs-v6";
 
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./manifest.webmanifest",
+  "./manifest.webmanifest"
+];
+
+const OPTIONAL_ASSETS = [
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
@@ -13,12 +16,28 @@ const CORE_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
+      /*
+       * ไฟล์หลักต้อง Cache สำเร็จครบ
+       * มิฉะนั้นจะไม่ติดตั้ง Service Worker รุ่นนี้
+       */
+      await cache.addAll(CORE_ASSETS);
+
+      /*
+       * ไอคอนเป็นไฟล์เสริม
+       * หากไฟล์ใดไม่มี จะไม่ทำให้ Service Worker ล้มเหลว
+       */
       await Promise.allSettled(
-        CORE_ASSETS.map(async (asset) => {
-          const response = await fetch(asset, { cache: "reload" });
+        OPTIONAL_ASSETS.map(async (asset) => {
+          const response = await fetch(asset, {
+            cache: "reload"
+          });
+
           if (!response.ok) {
-            throw new Error(`Cache install failed: ${asset}`);
+            throw new Error(
+              `Optional cache failed: ${asset}`
+            );
           }
+
           await cache.put(asset, response);
         })
       );
@@ -58,60 +77,92 @@ self.addEventListener("fetch", (event) => {
     url.pathname.endsWith(".css");
 
   if (isNetworkFirst) {
-    event.respondWith(networkFirst_(request));
+    event.respondWith(
+      networkFirst_(request)
+    );
     return;
   }
 
-  event.respondWith(cacheFirst_(request));
+  event.respondWith(
+    cacheFirst_(request)
+  );
 });
 
 async function networkFirst_(request) {
   try {
-    const response = await fetch(request, { cache: "no-store" });
+    const response = await fetch(request, {
+      cache: "no-store"
+    });
 
     if (response && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
+      const cache = await caches.open(
+        CACHE_NAME
+      );
+
+      await cache.put(
+        request,
+        response.clone()
+      );
     }
 
     return response;
+
   } catch (_) {
-    const cached = await caches.match(request);
+    const cached = await caches.match(
+      request
+    );
+
     if (cached) return cached;
 
     if (request.mode === "navigate") {
-      const fallback = await caches.match("./index.html");
+      const fallback = await caches.match(
+        "./index.html"
+      );
+
       if (fallback) return fallback;
     }
 
-    return new Response("Offline", {
-      status: 503,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8"
-      }
-    });
+    return offlineResponse_();
   }
 }
 
 async function cacheFirst_(request) {
-  const cached = await caches.match(request);
+  const cached = await caches.match(
+    request
+  );
+
   if (cached) return cached;
 
   try {
     const response = await fetch(request);
 
     if (response && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
+      const cache = await caches.open(
+        CACHE_NAME
+      );
+
+      await cache.put(
+        request,
+        response.clone()
+      );
     }
 
     return response;
+
   } catch (_) {
-    return new Response("Offline", {
+    return offlineResponse_();
+  }
+}
+
+function offlineResponse_() {
+  return new Response(
+    "Offline",
+    {
       status: 503,
       headers: {
-        "Content-Type": "text/plain; charset=utf-8"
+        "Content-Type":
+          "text/plain; charset=utf-8"
       }
-    });
-  }
+    }
+  );
 }
