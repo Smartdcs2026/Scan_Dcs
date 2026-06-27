@@ -3,9 +3,10 @@ const API_BASE = "https://visitor-entry-api.somchaibutphon.workers.dev";
 const SCAN_COOLDOWN_SUCCESS_MS = 350;
 const SCAN_COOLDOWN_WARNING_MS = 900;
 const SAME_CODE_HOLD_MS = 1800;
-const SKDC_SAME_CODE_HOLD_MS = 11000;
+const SKDC_SAME_CODE_HOLD_MS = 500;
+const SKDC_REARM_ABSENCE_MS = 1500;
 
-const API_TIMEOUT_MS = 35000;
+const API_TIMEOUT_MS = 55000;
 const RESULT_AUTO_CLOSE_MS = 3000;
 
 const DETECTOR_INTERVAL_MS = 120;
@@ -61,6 +62,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastScanAt = 0;
   let lastText = "";
   let lastTextAt = 0;
+
+  // หนึ่งการยื่นบัตร SKDC ต่อหน้ากล้อง = หนึ่งรายการเท่านั้น
+  // จะปลดล็อกเมื่อบัตรหายจากภาพต่อเนื่องตามเวลาที่กำหนด
+  let skdcLatchedCode = "";
+  let skdcPresentationId = "";
+  let skdcLastSeenAt = 0;
 
   let currentRequestId = 0;
   let currentFetchController = null;
@@ -161,6 +168,50 @@ document.addEventListener("DOMContentLoaded", () => {
       return crypto.randomUUID();
     } catch (_) {
       return `req_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+    }
+  }
+
+  function beginSkdcPresentation_(code) {
+    skdcLatchedCode = normalizeCode_(code);
+    skdcPresentationId = createClientRequestId_();
+    skdcLastSeenAt = Date.now();
+    return skdcPresentationId;
+  }
+
+  function observeDetectedCode_(code) {
+    const normalized = normalizeCode_(code);
+    if (!skdcLatchedCode) return;
+
+    if (normalized === skdcLatchedCode) {
+      skdcLastSeenAt = Date.now();
+      return;
+    }
+
+    // พบ QR คนละใบ แสดงว่าบัตรเดิมพ้นจากกล้องแล้ว
+    if (normalized) {
+      clearSkdcPresentationLock_();
+    }
+  }
+
+  function observeNoCode_() {
+    if (!skdcLatchedCode || !skdcLastSeenAt) return;
+
+    if (Date.now() - skdcLastSeenAt >= SKDC_REARM_ABSENCE_MS) {
+      clearSkdcPresentationLock_();
+    }
+  }
+
+  function clearSkdcPresentationLock_() {
+    skdcLatchedCode = "";
+    skdcPresentationId = "";
+    skdcLastSeenAt = 0;
+
+    if (
+      cameraStarted &&
+      !requestInFlight &&
+      !resultVisible
+    ) {
+      setCameraStatus_("กล้องพร้อมสแกน", "live");
     }
   }
 
@@ -534,7 +585,15 @@ document.addEventListener("DOMContentLoaded", () => {
     searchInput.value = "";
 
     if (cameraStarted) {
-      setCameraStatus_("กล้องพร้อมสแกน", "live");
+      if (skdcLatchedCode) {
+        setCameraStatus_(
+          "กรุณานำบัตรออกจากหน้ากล้อง",
+          "warning"
+        );
+      } else {
+        setCameraStatus_("กล้องพร้อมสแกน", "live");
+      }
+
       bumpIdle_();
       startDecode_();
       videoWrap.scrollIntoView({
@@ -782,6 +841,7 @@ document.addEventListener("DOMContentLoaded", () => {
     activeStream = null;
     videoTrack = null;
     cameraStarted = false;
+    clearSkdcPresentationLock_();
 
     try {
       qrVideo.pause();
@@ -840,9 +900,14 @@ document.addEventListener("DOMContentLoaded", () => {
           const text = normalizeCode_(barcodes[0].rawValue || "");
 
           if (text) {
+            observeDetectedCode_(text);
             const accepted = await handleDecodedText_(text);
             if (accepted) return;
+          } else {
+            observeNoCode_();
           }
+        } else {
+          observeNoCode_();
         }
       }
     } catch (_) {}
@@ -855,11 +920,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const decodePromise = zxingReader.decodeFromVideoElementContinuously(
         qrVideo,
         async (result) => {
-          if (!decodeRunning || !cameraStarted || !result) return;
+          if (!decodeRunning || !cameraStarted) return;
+
+          if (!result) {
+            observeNoCode_();
+            return;
+          }
 
           const text = normalizeCode_(result.getText?.() || "");
-          if (!text) return;
+          if (!text) {
+            observeNoCode_();
+            return;
+          }
 
+          observeDetectedCode_(text);
           await handleDecodedText_(text);
         }
       );
@@ -881,6 +955,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (requestInFlight) return false;
     if (resultVisible) return false;
     if (now - lastScanAt < SCAN_COOLDOWN_SUCCESS_MS) return false;
+
+    if (
+      isSkdcCode_(text) &&
+      skdcLatchedCode === text
+    ) {
+      return false;
+    }
 
     const sameCodeHoldMs = isSkdcCode_(text)
       ? SKDC_SAME_CODE_HOLD_MS
@@ -905,11 +986,18 @@ document.addEventListener("DOMContentLoaded", () => {
     lastText = text;
     lastTextAt = Date.now();
 
+    const presentationId = isSkdcCode_(text)
+      ? beginSkdcPresentation_(text)
+      : "";
+
     playScanSound_();
     stopDecode_();
 
     try {
-      await runSearch_(text, { source: "camera" });
+      await runSearch_(text, {
+        source: "camera",
+        presentationId
+      });
       return true;
     } finally {
       setTimeout(() => {
@@ -973,6 +1061,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const localRequestId = nextRequestId_();
     const cardRequestId = createClientRequestId_();
     const isCardAccess = isSkdcCode_(query);
+    const presentationId = isCardAccess
+      ? (options.presentationId || createClientRequestId_())
+      : "";
 
     setBusy_(true);
     stopDecode_();
@@ -986,7 +1077,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const response = isCardAccess
-        ? await apiCardAccess_(query, cardRequestId)
+        ? await apiCardAccess_(
+            query,
+            cardRequestId,
+            presentationId
+          )
         : await apiSearch_(query);
 
       if (localRequestId !== currentRequestId) return;
@@ -1184,7 +1279,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function apiCardAccess_(idCard, requestId) {
+  async function apiCardAccess_(idCard, requestId, presentationId) {
     const url = `${API_BASE}/api/card-access`;
 
     return fetchJsonWithTimeout_(url, {
@@ -1196,7 +1291,8 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       body: JSON.stringify({
         idCard,
-        requestId
+        requestId,
+        presentationId
       })
     });
   }
