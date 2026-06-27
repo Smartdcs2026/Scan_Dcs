@@ -3,8 +3,9 @@ const API_BASE = "https://visitor-entry-api.somchaibutphon.workers.dev";
 const SCAN_COOLDOWN_SUCCESS_MS = 350;
 const SCAN_COOLDOWN_WARNING_MS = 900;
 const SAME_CODE_HOLD_MS = 1800;
+const SKDC_SAME_CODE_HOLD_MS = 11000;
 
-const API_TIMEOUT_MS = 30000;
+const API_TIMEOUT_MS = 35000;
 const RESULT_AUTO_CLOSE_MS = 3000;
 
 const DETECTOR_INTERVAL_MS = 120;
@@ -28,6 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultCard = document.getElementById("scanResult");
   const resultGrid = document.getElementById("resultGrid");
   const resultHint = document.getElementById("resultHint");
+  const resultTitle = document.getElementById("resultTitle");
+  const resultActionBadge = document.getElementById("resultActionBadge");
+  const resultMedia = document.getElementById("resultMedia");
 
   const zxingReader = new ZXing.BrowserQRCodeReader(undefined, {
     delayBetweenScanAttempts: 60,
@@ -148,6 +152,27 @@ document.addEventListener("DOMContentLoaded", () => {
       .toUpperCase();
   }
 
+  function isSkdcCode_(value) {
+    return normalizeCode_(value).startsWith("SKDC");
+  }
+
+  function createClientRequestId_() {
+    try {
+      return crypto.randomUUID();
+    } catch (_) {
+      return `req_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+    }
+  }
+
+  function isSafeImageUrl_(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" || url.protocol === "http:";
+    } catch (_) {
+      return false;
+    }
+  }
+
   function isMobile_() {
     return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   }
@@ -245,6 +270,15 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (_) {}
   }
 
+  function playBlockedSound_() {
+    playTone_(240, 260, "sawtooth", 0.34);
+    setTimeout(() => playTone_(180, 420, "sawtooth", 0.38), 285);
+
+    try {
+      navigator.vibrate?.([320, 120, 520]);
+    } catch (_) {}
+  }
+
   function playErrorSound_() {
     playTone_(260, 120, "square", 0.22);
     setTimeout(() => playTone_(220, 120, "square", 0.22), 130);
@@ -294,45 +328,125 @@ document.addEventListener("DOMContentLoaded", () => {
     }, RESULT_AUTO_CLOSE_MS);
   }
 
-  function showResult_(record = {}, hint = "") {
+  function showResult_(record = {}, options = {}) {
     clearResultAutoClose_();
-    resultGrid.innerHTML = "";
-    resultHint.textContent = hint || "บันทึกสำเร็จ";
 
-    const preferredOrder = [
-      "Auto ID",
-      "รหัส",
-      "ชื่อ-นามสกุล",
-      "ชื่อ-สกุล",
-      "เพศ",
-      "เบอร์โทร",
-      "DC",
-      "DC Name",
-      "Timestamp",
-      "Timestamp IN",
-      "Timestamp Out",
-      "Duration"
-    ];
+    const title = String(options.title || "ผลการสแกน");
+    const hint = String(options.hint || "ดำเนินการเรียบร้อย");
+    const state = String(options.state || "success").toLowerCase();
+    const action = String(options.action || "").toUpperCase();
+
+    resultGrid.innerHTML = "";
+    resultMedia.innerHTML = "";
+    resultTitle.textContent = title;
+    resultHint.textContent = hint;
+
+    resultCard.dataset.state = state;
+    videoWrap.dataset.resultState = state;
+
+    resultActionBadge.className = "result-action-badge is-hidden";
+    resultActionBadge.textContent = "";
+
+    if (action === "IN" || action === "OUT") {
+      resultActionBadge.textContent =
+        action === "IN" ? "เข้าพื้นที่" : "ออกจากพื้นที่";
+      resultActionBadge.className =
+        `result-action-badge action-${action.toLowerCase()}`;
+    }
+
+    const imageUrl = String(
+      record["ลิงค์ภาพถ่าย"] ||
+      record.imageUrl ||
+      ""
+    ).trim();
+
+    if (imageUrl && isSafeImageUrl_(imageUrl)) {
+      const image = document.createElement("img");
+      image.className = "result-photo";
+      image.src = imageUrl;
+      image.alt = "ภาพผู้ถือบัตร";
+      image.loading = "eager";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+
+      const fallback = document.createElement("div");
+      fallback.className = "result-photo-fallback is-hidden";
+      fallback.textContent = "ไม่สามารถแสดงภาพได้";
+
+      image.addEventListener("error", () => {
+        image.remove();
+        fallback.classList.remove("is-hidden");
+      }, { once: true });
+
+      resultMedia.appendChild(image);
+      resultMedia.appendChild(fallback);
+      resultMedia.classList.remove("is-hidden");
+    } else {
+      resultMedia.classList.add("is-hidden");
+    }
+
+    const preferredOrder = isSkdcCode_(
+      record["ID Card"] || ""
+    )
+      ? [
+          "ID Card",
+          "ชื่อ-นามสกุล",
+          "ต้นสังกัด/บริษัท",
+          "DC",
+          "วันหมดอายุบัตร/Passport",
+          "จำนวนวันคงเหลือ",
+          "Timestamp IN",
+          "Timestamp Out",
+          "Duration"
+        ]
+      : [
+          "Auto ID",
+          "รหัส",
+          "ชื่อ-นามสกุล",
+          "ชื่อ-สกุล",
+          "เพศ",
+          "เบอร์โทร",
+          "DC",
+          "DC Name",
+          "Timestamp",
+          "Timestamp IN",
+          "Timestamp Out",
+          "Duration"
+        ];
+
+    const hiddenFields = new Set([
+      "ลิงค์ภาพถ่าย",
+      "imageUrl"
+    ]);
 
     const used = new Set();
     const keys = [];
 
     preferredOrder.forEach((key) => {
-      if (record[key] != null && record[key] !== "") {
+      if (
+        !hiddenFields.has(key) &&
+        record[key] != null &&
+        record[key] !== ""
+      ) {
         keys.push(key);
         used.add(key);
       }
     });
 
     Object.keys(record).forEach((key) => {
-      if (!used.has(key) && record[key] != null && record[key] !== "") {
+      if (
+        !used.has(key) &&
+        !hiddenFields.has(key) &&
+        record[key] != null &&
+        record[key] !== ""
+      ) {
         keys.push(key);
       }
     });
 
     if (!keys.length) {
       const empty = document.createElement("div");
-      empty.className = "v";
+      empty.className = "result-empty";
       empty.textContent = "ไม่มีรายละเอียดเพิ่มเติม";
       resultGrid.appendChild(empty);
     } else {
@@ -358,6 +472,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (key === "Duration") {
           keyElement.classList.add("hl-dur");
           valueElement.classList.add("hl-dur");
+        }
+
+        if (
+          key === "วันหมดอายุบัตร/Passport" ||
+          key === "จำนวนวันคงเหลือ"
+        ) {
+          keyElement.classList.add("hl-expiry");
+          valueElement.classList.add("hl-expiry");
         }
 
         resultGrid.appendChild(keyElement);
@@ -392,7 +514,14 @@ document.addEventListener("DOMContentLoaded", () => {
     clearResultAutoClose_();
     resultVisible = false;
     resultGrid.innerHTML = "";
+    resultMedia.innerHTML = "";
+    resultMedia.classList.add("is-hidden");
+    resultTitle.textContent = "ผลการสแกน";
     resultHint.textContent = "พร้อมสแกน...";
+    resultActionBadge.textContent = "";
+    resultActionBadge.className = "result-action-badge is-hidden";
+    resultCard.dataset.state = "";
+    videoWrap.dataset.resultState = "";
     resultCard.classList.add("is-hidden");
     resultCard.classList.remove("flash");
     videoWrap.classList.remove("has-result");
@@ -752,7 +881,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (requestInFlight) return false;
     if (resultVisible) return false;
     if (now - lastScanAt < SCAN_COOLDOWN_SUCCESS_MS) return false;
-    if (text === lastText && now - lastTextAt < SAME_CODE_HOLD_MS) return false;
+
+    const sameCodeHoldMs = isSkdcCode_(text)
+      ? SKDC_SAME_CODE_HOLD_MS
+      : SAME_CODE_HOLD_MS;
+
+    if (
+      text === lastText &&
+      now - lastTextAt < sameCodeHoldMs
+    ) {
+      return false;
+    }
 
     return true;
   }
@@ -810,7 +949,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!query) {
       await Toast.fire({
         icon: "warning",
-        title: "กรุณาป้อนเลข Auto ID",
+        title: "กรุณาป้อนรหัส",
         timer: 1400
       });
       return;
@@ -820,7 +959,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await Toast.fire({
         icon: "warning",
         title: "รหัสยาวเกินกำหนด",
-        text: "กรุณาตรวจสอบ Auto ID อีกครั้ง",
+        text: "กรุณาตรวจสอบรหัสอีกครั้ง",
         timer: 1600
       });
       return;
@@ -831,27 +970,52 @@ document.addEventListener("DOMContentLoaded", () => {
     hideResult_();
     bumpIdle_();
 
-    const requestId = nextRequestId_();
+    const localRequestId = nextRequestId_();
+    const cardRequestId = createClientRequestId_();
+    const isCardAccess = isSkdcCode_(query);
+
     setBusy_(true);
     stopDecode_();
-    setCameraStatus_("กำลังค้นหา...", "loading");
+
+    setCameraStatus_(
+      isCardAccess
+        ? "กำลังตรวจสอบบัตร..."
+        : "กำลังค้นหา...",
+      "loading"
+    );
 
     try {
-      const response = await apiSearch_(query);
+      const response = isCardAccess
+        ? await apiCardAccess_(query, cardRequestId)
+        : await apiSearch_(query);
 
-      if (requestId !== currentRequestId) return;
+      if (localRequestId !== currentRequestId) return;
 
       const record = response?.data?.record || {};
-      const status = String(response?.status || "");
+      const status = String(response?.status || "").toLowerCase();
+      const action = String(response?.action || "").toUpperCase();
 
       if (status === "success") {
-        setCameraStatus_("บันทึกสำเร็จ", "success");
+        const actionText =
+          action === "IN"
+            ? "บันทึกเข้าพื้นที่สำเร็จ"
+            : action === "OUT"
+              ? "บันทึกออกจากพื้นที่สำเร็จ"
+              : "บันทึกสำเร็จ";
+
+        setCameraStatus_(actionText, "success");
         playSuccessSound_();
-        showResult_(record, response.detail || "บันทึกสำเร็จ");
+
+        showResult_(record, {
+          title: response.title || actionText,
+          hint: response.detail || "ดำเนินการเรียบร้อยแล้ว",
+          state: action === "OUT" ? "out" : "success",
+          action: action
+        });
 
         await Toast.fire({
           icon: "success",
-          title: response.title || "บันทึกสำเร็จ",
+          title: response.title || actionText,
           timer: 1100
         });
 
@@ -860,12 +1024,42 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      if (status === "blocked") {
+        playBlockedSound_();
+        setCameraStatus_("ไม่อนุญาตให้เข้า–ออก", "error");
+
+        showResult_(record, {
+          title: response.title || "ไม่อนุญาตให้เข้า–ออกพื้นที่",
+          hint: response.detail || "บัตรหมดอายุหรือข้อมูลไม่ถูกต้อง",
+          state: "blocked",
+          action: action
+        });
+
+        await Toast.fire({
+          icon: "error",
+          title: response.title || "ไม่อนุญาตให้เข้า–ออกพื้นที่",
+          text: response.detail || "",
+          timer: 1800
+        });
+
+        searchInput.value = "";
+        lastScanAt = Date.now() - (
+          SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS
+        );
+        return;
+      }
+
       if (status === "duplicate") {
         playDuplicateSound_();
-        setCameraStatus_("พบข้อมูลซ้ำ", "warning");
+        setCameraStatus_("พบการสแกนซ้ำ", "warning");
 
         if (Object.keys(record).length) {
-          showResult_(record, response.detail || "ข้อมูลนี้ออกระบบแล้ว");
+          showResult_(record, {
+            title: response.title || "บันทึกซ้ำไม่ได้",
+            hint: response.detail || "กรุณานำรหัสออกจากหน้ากล้อง",
+            state: "duplicate",
+            action: action
+          });
         }
 
         await Toast.fire({
@@ -905,13 +1099,24 @@ document.addEventListener("DOMContentLoaded", () => {
       setCameraStatus_("เกิดข้อผิดพลาด", "error");
 
       if (Object.keys(record).length) {
-        showResult_(record, response.detail || "เกิดข้อผิดพลาด");
+        showResult_(record, {
+          title: response.title || "เกิดข้อผิดพลาด",
+          hint:
+            response.detail ||
+            response.error ||
+            "ไม่สามารถประมวลผลได้",
+          state: "error",
+          action: action
+        });
       }
 
       await Toast.fire({
         icon: "error",
         title: response.title || "เกิดข้อผิดพลาด",
-        text: response.detail || response.error || "ไม่สามารถประมวลผลได้",
+        text:
+          response.detail ||
+          response.error ||
+          "ไม่สามารถประมวลผลได้",
         timer: 1800
       });
 
@@ -919,10 +1124,11 @@ document.addEventListener("DOMContentLoaded", () => {
       lastScanAt = Date.now() - (
         SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS
       );
+
     } catch (error) {
       console.error(error);
 
-      if (requestId !== currentRequestId) return;
+      if (localRequestId !== currentRequestId) return;
 
       playErrorSound_();
       setCameraStatus_("เชื่อมต่อไม่สำเร็จ", "error");
@@ -937,8 +1143,9 @@ document.addEventListener("DOMContentLoaded", () => {
       lastScanAt = Date.now() - (
         SCAN_COOLDOWN_SUCCESS_MS - SCAN_COOLDOWN_WARNING_MS
       );
+
     } finally {
-      if (requestId === currentRequestId) {
+      if (localRequestId === currentRequestId) {
         setBusy_(false);
         bumpIdle_();
 
@@ -951,7 +1158,10 @@ document.addEventListener("DOMContentLoaded", () => {
           startDecode_();
         }
 
-        if (options.source === "manual" && !resultVisible) {
+        if (
+          options.source === "manual" &&
+          !resultVisible
+        ) {
           searchInput.focus();
           searchInput.select?.();
         }
@@ -960,6 +1170,38 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function apiSearch_(query) {
+    const url =
+      `${API_BASE}/api/search` +
+      `?query=${encodeURIComponent(query)}` +
+      `&_ts=${Date.now()}`;
+
+    return fetchJsonWithTimeout_(url, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+  }
+
+  async function apiCardAccess_(idCard, requestId) {
+    const url = `${API_BASE}/api/card-access`;
+
+    return fetchJsonWithTimeout_(url, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json; charset=UTF-8"
+      },
+      body: JSON.stringify({
+        idCard,
+        requestId
+      })
+    });
+  }
+
+  async function fetchJsonWithTimeout_(url, options) {
     abortActiveRequest_();
 
     const controller = new AbortController();
@@ -970,14 +1212,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }, API_TIMEOUT_MS);
 
     try {
-      const url = `${API_BASE}/api/search?query=${encodeURIComponent(query)}&_ts=${Date.now()}`;
       const response = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        signal: controller.signal,
-        headers: {
-          Accept: "application/json"
-        }
+        ...options,
+        signal: controller.signal
       });
 
       let data;
@@ -989,16 +1226,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (!response.ok && !data?.status) {
-        throw new Error(data?.detail || `HTTP ${response.status}`);
+        throw new Error(
+          data?.detail ||
+          data?.error ||
+          `HTTP ${response.status}`
+        );
       }
 
       return data;
+
     } catch (error) {
       if (error?.name === "AbortError") {
         throw new Error("หมดเวลารอการเชื่อมต่อ");
       }
 
       throw error;
+
     } finally {
       clearTimeout(timer);
 
