@@ -176,13 +176,14 @@ h1{
   z-index:2;
   display:flex;
   align-items:flex-start;
-  justify-content:space-between;
+  justify-content:center;
   gap:10px;
   margin:-16px -14px 12px;
   padding:14px 14px 11px;
   background:rgba(255,255,255,.96);
   border-bottom:1px solid var(--line);
   backdrop-filter:blur(8px);
+  text-align:center;
 }
 
 .result-title{
@@ -196,6 +197,14 @@ h1{
   color:#64748b;
   font-size:12px;
   line-height:1.4;
+}
+
+.result-auto-note{
+  margin-top:4px;
+  color:#0f766e;
+  font-size:11px;
+  font-weight:600;
+  line-height:1.35;
 }
 
 .result-btn{
