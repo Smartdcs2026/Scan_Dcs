@@ -400,7 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (action === "IN" || action === "OUT") {
       resultActionBadge.textContent =
-        action === "IN" ? "● เข้าพื้นที่" : "● ออกจากพื้นที่";
+        action === "IN" ? "เข้าพื้นที่" : "ออกจากพื้นที่";
       resultActionBadge.className =
         `result-action-badge action-${action.toLowerCase()}`;
     }
@@ -1104,7 +1104,7 @@ document.addEventListener("DOMContentLoaded", () => {
         showResult_(record, {
           title: response.title || actionText,
           hint: response.detail || "ดำเนินการเรียบร้อยแล้ว",
-          state: action === "OUT" ? "out" : action === "IN" ? "in" : "success",
+          state: action === "OUT" ? "out" : "success",
           action: action
         });
 
