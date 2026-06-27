@@ -2,9 +2,9 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <title>บันทึกเวลาออก</title>
+  <title>ระบบสแกนเข้า–ออกพื้นที่</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="description" content="ระบบสแกน QR หรือกรอก Auto ID เพื่อบันทึกเวลาออก" />
+  <meta name="description" content="ระบบสแกน QR, Auto ID และบัตร SKDC เพื่อบันทึกเข้า–ออกพื้นที่" />
 
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#00BFB2">
@@ -29,8 +29,8 @@
 <body>
   <main class="page-shell">
     <section class="container" aria-labelledby="pageTitle">
-      <h1 id="pageTitle">บันทึกเวลาออก</h1>
-      <p class="subtitle">สแกน QR หรือป้อน Auto ID</p>
+      <h1 id="pageTitle">บันทึกเข้า–ออกพื้นที่</h1>
+      <p class="subtitle">สแกน QR, Auto ID หรือบัตร SKDC</p>
 
       <div id="videoWrap" class="video-wrap">
         <video
@@ -54,12 +54,14 @@
         >
           <div class="result-top">
             <div>
-              <div class="result-title">ผลการสแกน</div>
+              <div class="result-title" id="resultTitle">ผลการสแกน</div>
+              <div id="resultActionBadge" class="result-action-badge is-hidden"></div>
               <div class="result-sub" id="resultHint">พร้อมสแกน...</div>
               <div class="result-auto-note">กลับไปสแกนต่ออัตโนมัติใน 3 วินาที</div>
             </div>
           </div>
 
+          <div id="resultMedia" class="result-media is-hidden"></div>
           <div class="result-grid" id="resultGrid"></div>
         </section>
       </div>
@@ -68,15 +70,15 @@
         <input
           type="text"
           id="searchInput"
-          placeholder="ป้อนเลข Auto ID"
+          placeholder="ป้อน Auto ID หรือ ID Card"
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
           inputmode="text"
-          aria-label="เลข Auto ID"
+          aria-label="Auto ID หรือ ID Card"
           maxlength="120"
         />
-        <button id="searchBtn" class="primary-btn" type="button">บันทึกเวลาออก</button>
+        <button id="searchBtn" class="primary-btn" type="button">ตรวจสอบและบันทึก</button>
       </div>
 
       <select id="cameraSelect" aria-label="เลือกกล้อง"></select>
