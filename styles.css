@@ -94,6 +94,22 @@ h1{
   box-shadow:0 10px 30px rgba(0,191,178,.22);
 }
 
+.video-wrap[data-result-state="out"]{
+  border-color:#0284c7;
+  box-shadow:0 10px 30px rgba(2,132,199,.22);
+}
+
+.video-wrap[data-result-state="duplicate"]{
+  border-color:#d97706;
+  box-shadow:0 10px 30px rgba(217,119,6,.22);
+}
+
+.video-wrap[data-result-state="blocked"],
+.video-wrap[data-result-state="error"]{
+  border-color:#dc2626;
+  box-shadow:0 10px 30px rgba(220,38,38,.24);
+}
+
 #qrVideo{
   width:100%;
   height:100%;
@@ -166,8 +182,21 @@ h1{
   scrollbar-width:thin;
 }
 
-.result-card.is-hidden{
-  display:none;
+.result-card[data-state="out"]{
+  background:linear-gradient(180deg,#ffffff 0%,#f0f9ff 100%);
+}
+
+.result-card[data-state="duplicate"]{
+  background:linear-gradient(180deg,#ffffff 0%,#fff7ed 100%);
+}
+
+.result-card[data-state="blocked"],
+.result-card[data-state="error"]{
+  background:linear-gradient(180deg,#ffffff 0%,#fff1f2 100%);
+}
+
+.is-hidden{
+  display:none !important;
 }
 
 .result-top{
@@ -190,6 +219,62 @@ h1{
   color:#0f172a;
   font-size:16px;
   font-weight:700;
+}
+
+.result-action-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:84px;
+  margin-top:6px;
+  padding:5px 11px;
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  line-height:1.2;
+  border-radius:999px;
+}
+
+.result-action-badge.action-in{
+  background:#059669;
+  box-shadow:0 5px 14px rgba(5,150,105,.22);
+}
+
+.result-action-badge.action-out{
+  background:#0284c7;
+  box-shadow:0 5px 14px rgba(2,132,199,.22);
+}
+
+.result-media{
+  display:flex;
+  justify-content:center;
+  margin:0 0 12px;
+}
+
+.result-photo{
+  width:104px;
+  height:126px;
+  display:block;
+  object-fit:cover;
+  background:#e2e8f0;
+  border:3px solid #fff;
+  border-radius:16px;
+  box-shadow:0 8px 22px rgba(15,23,42,.18);
+}
+
+.result-photo-fallback{
+  width:104px;
+  min-height:96px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px;
+  color:#64748b;
+  font-size:11px;
+  text-align:center;
+  background:#f1f5f9;
+  border:1px dashed #94a3b8;
+  border-radius:14px;
 }
 
 .result-sub{
@@ -261,6 +346,26 @@ h1{
 
 .hl-dur{
   background:#e7f9ef;
+}
+
+.hl-expiry{
+  padding:5px 8px;
+  background:#fef3c7;
+  border-radius:10px;
+}
+
+.result-card[data-state="blocked"] .hl-expiry,
+.result-card[data-state="error"] .hl-expiry{
+  color:#991b1b;
+  background:#fee2e2;
+}
+
+.result-empty{
+  grid-column:1 / -1;
+  padding:18px 10px;
+  color:#64748b;
+  font-size:13px;
+  text-align:center;
 }
 
 .flash{
