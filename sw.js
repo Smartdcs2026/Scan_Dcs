@@ -1,4 +1,4 @@
-const CACHE_NAME = "scan-dcs-v8";
+const CACHE_NAME = "scan-dcs-v9";
 
 const CORE_ASSETS = [
   "./",
